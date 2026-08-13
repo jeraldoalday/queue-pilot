@@ -12,7 +12,9 @@ import (
 	"time"
 
 	"github.com/jeraldoalday/queuepilot/internal/config"
+	"github.com/jeraldoalday/queuepilot/internal/db"
 	"github.com/jeraldoalday/queuepilot/internal/platform/logger"
+	"github.com/jeraldoalday/queuepilot/internal/web"
 )
 
 func main() {
@@ -30,20 +32,23 @@ func run() error {
 
 	log := logger.New(cfg.Env)
 
-	mux := http.NewServeMux()
-	mux.HandleFunc("GET /healthz", handleHealthz)
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+
+	pool, err := db.Connect(ctx, cfg.DatabaseURL)
+	if err != nil {
+		return err
+	}
+	defer pool.Close()
 
 	srv := &http.Server{
 		Addr:              ":" + cfg.Port,
-		Handler:           mux,
+		Handler:           web.NewServer(cfg, log, pool).Routes(),
 		ReadHeaderTimeout: 5 * time.Second,
 		ReadTimeout:       15 * time.Second,
 		WriteTimeout:      15 * time.Second,
 		IdleTimeout:       60 * time.Second,
 	}
-
-	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
-	defer stop()
 
 	errCh := make(chan error, 1)
 	go func() {
@@ -70,10 +75,4 @@ func run() error {
 	}
 	log.Info("server stopped")
 	return nil
-}
-
-func handleHealthz(w http.ResponseWriter, r *http.Request) {
-	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
-	w.WriteHeader(http.StatusOK)
-	w.Write([]byte("ok"))
 }

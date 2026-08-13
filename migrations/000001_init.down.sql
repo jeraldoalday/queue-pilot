@@ -1,0 +1,10 @@
+DROP TABLE IF EXISTS queue_tickets;
+DROP TABLE IF EXISTS queue_daily_counters;
+DROP TABLE IF EXISTS queues;
+DROP TABLE IF EXISTS appointments;
+DROP TABLE IF EXISTS staff_availability;
+DROP TABLE IF EXISTS staff_services;
+DROP TABLE IF EXISTS services;
+DROP TABLE IF EXISTS sessions;
+DROP TABLE IF EXISTS users;
+DROP TABLE IF EXISTS organizations;

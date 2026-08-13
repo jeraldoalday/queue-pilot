@@ -1,0 +1,69 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  build-test:
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: queuepilot
+          POSTGRES_PASSWORD: queuepilot
+          POSTGRES_DB: queuepilot
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U queuepilot -d queuepilot"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    env:
+      DATABASE_URL: postgres://queuepilot:queuepilot@localhost:5432/queuepilot?sslmode=disable
+      ENV: development
+      PORT: 8080
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Install templ
+        run: go install github.com/a-h/templ/cmd/templ@latest
+
+      - name: Install sqlc
+        run: go install github.com/sqlc-dev/sqlc/cmd/sqlc@latest
+
+      - name: Install migrate CLI
+        run: go install -tags 'postgres' github.com/golang-migrate/migrate/v4/cmd/migrate@latest
+
+      - name: Generate templ (drift check)
+        run: |
+          templ generate ./...
+          git diff --exit-code -- '*_templ.go' || (echo "::error::templ generate produced a diff — commit the regenerated files" && exit 1)
+
+      - name: Generate sqlc (drift check)
+        run: |
+          sqlc generate
+          git diff --exit-code -- internal/db/sqlc || (echo "::error::sqlc generate produced a diff — commit the regenerated files" && exit 1)
+
+      - name: Run migrations
+        run: migrate -path migrations -database "$DATABASE_URL" up
+
+      - name: go vet
+        run: go vet ./...
+
+      - name: go build
+        run: go build ./...
+
+      - name: go test
+        run: go test ./... -race

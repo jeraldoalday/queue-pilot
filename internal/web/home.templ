@@ -1,0 +1,19 @@
+package web
+
+import (
+	"fmt"
+
+	"github.com/jeraldoalday/queuepilot/internal/web/components"
+)
+
+templ Home(orgCount int64) {
+	@components.Layout("Home") {
+		<main class="mx-auto max-w-2xl px-6 py-16">
+			<h1 class="text-3xl font-semibold tracking-tight">QueuePilot</h1>
+			<p class="mt-2 text-slate-600">Appointment booking and walk-in queue management.</p>
+			<p class="mt-8 rounded-md border border-slate-200 bg-white px-4 py-3 text-sm text-slate-500">
+				{ fmt.Sprintf("%d organizations registered", orgCount) }
+			</p>
+		</main>
+	}
+}
