@@ -6,19 +6,32 @@ import (
 
 	"github.com/jackc/pgx/v5/pgxpool"
 
+	"github.com/jeraldoalday/queuepilot/internal/auth"
 	"github.com/jeraldoalday/queuepilot/internal/config"
 	sqlcgen "github.com/jeraldoalday/queuepilot/internal/db/sqlc"
+	"github.com/jeraldoalday/queuepilot/internal/platform/clock"
+	"github.com/jeraldoalday/queuepilot/internal/session"
 )
 
 type Server struct {
-	cfg     config.Config
-	log     *slog.Logger
-	pool    *pgxpool.Pool
-	queries *sqlcgen.Queries
+	cfg      config.Config
+	log      *slog.Logger
+	pool     *pgxpool.Pool
+	queries  *sqlcgen.Queries
+	sessions *session.Store
+	auth     *auth.Handlers
 }
 
 func NewServer(cfg config.Config, log *slog.Logger, pool *pgxpool.Pool) *Server {
-	return &Server{cfg: cfg, log: log, pool: pool, queries: sqlcgen.New(pool)}
+	sessions := session.NewStore(pool, clock.Real{})
+	return &Server{
+		cfg:      cfg,
+		log:      log,
+		pool:     pool,
+		queries:  sqlcgen.New(pool),
+		sessions: sessions,
+		auth:     auth.NewHandlers(pool, sessions, cfg.SessionCookieSecure, log),
+	}
 }
 
 func (s *Server) Routes() http.Handler {
@@ -29,6 +42,15 @@ func (s *Server) Routes() http.Handler {
 
 	mux.HandleFunc("GET /healthz", s.handleHealthz)
 	mux.HandleFunc("GET /{$}", s.handleHome)
+
+	mux.HandleFunc("GET /signup", s.auth.GetSignup)
+	mux.HandleFunc("POST /signup", s.auth.PostSignup)
+	mux.HandleFunc("GET /login", s.auth.GetLogin)
+	mux.HandleFunc("POST /login", s.auth.PostLogin)
+	mux.HandleFunc("POST /logout", s.auth.PostLogout)
+
+	requireAuth := auth.RequireAuth(s.sessions, s.log)
+	mux.Handle("GET /app", requireAuth(http.HandlerFunc(s.handleAppHome)))
 
 	return mux
 }
@@ -58,5 +80,17 @@ func (s *Server) handleHome(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	if err := Home(count).Render(r.Context(), w); err != nil {
 		s.log.Error("handleHome: render", "error", err)
+	}
+}
+
+func (s *Server) handleAppHome(w http.ResponseWriter, r *http.Request) {
+	ident, ok := auth.CurrentIdentity(r.Context())
+	if !ok {
+		http.Redirect(w, r, "/login", http.StatusSeeOther)
+		return
+	}
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	if err := AppHome(ident).Render(r.Context(), w); err != nil {
+		s.log.Error("handleAppHome: render", "error", err)
 	}
 }

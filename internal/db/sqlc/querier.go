@@ -13,11 +13,15 @@ import (
 type Querier interface {
 	CountOrganizations(ctx context.Context) (int64, error)
 	CreateOrganization(ctx context.Context, arg CreateOrganizationParams) (Organization, error)
+	CreateSession(ctx context.Context, arg CreateSessionParams) (Session, error)
 	CreateUser(ctx context.Context, arg CreateUserParams) (User, error)
+	DeleteSession(ctx context.Context, token string) error
 	GetOrganizationByID(ctx context.Context, id pgtype.UUID) (Organization, error)
 	GetOrganizationBySlug(ctx context.Context, slug string) (Organization, error)
+	GetSessionWithUser(ctx context.Context, token string) (GetSessionWithUserRow, error)
 	GetUserByEmail(ctx context.Context, lower string) (User, error)
 	GetUserByID(ctx context.Context, arg GetUserByIDParams) (User, error)
+	TouchSession(ctx context.Context, token string) error
 }
 
 var _ Querier = (*Queries)(nil)

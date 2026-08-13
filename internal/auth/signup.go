@@ -1,0 +1,151 @@
+package auth
+
+import (
+	"context"
+	"errors"
+	"fmt"
+	"strings"
+
+	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgxpool"
+
+	"github.com/jeraldoalday/queuepilot/internal/db"
+	"github.com/jeraldoalday/queuepilot/internal/db/sqlc"
+	"github.com/jeraldoalday/queuepilot/internal/org"
+	"github.com/jeraldoalday/queuepilot/internal/platform/id"
+	"github.com/jeraldoalday/queuepilot/internal/session"
+	"github.com/jeraldoalday/queuepilot/internal/tenant"
+)
+
+var (
+	ErrSlugTaken          = errors.New("auth: organization slug already taken")
+	ErrEmailTaken         = errors.New("auth: email already registered")
+	ErrInvalidCredentials = errors.New("auth: invalid email or password")
+)
+
+// ValidationError wraps a message that is always safe to show a user
+// directly (unlike unexpected DB/internal errors, which handlers must log
+// and replace with a generic message before responding).
+type ValidationError struct{ msg string }
+
+func (e ValidationError) Error() string { return e.msg }
+
+type SignupInput struct {
+	OrgName    string
+	AdminName  string
+	AdminEmail string
+	Password   string
+	UserAgent  string
+	IP         string
+}
+
+func (in SignupInput) validate() error {
+	if strings.TrimSpace(in.OrgName) == "" {
+		return ValidationError{"organization name is required"}
+	}
+	if strings.TrimSpace(in.AdminName) == "" {
+		return ValidationError{"your name is required"}
+	}
+	if !looksLikeEmail(in.AdminEmail) {
+		return ValidationError{"a valid email is required"}
+	}
+	if len(in.Password) < 8 {
+		return ValidationError{"password must be at least 8 characters"}
+	}
+	return nil
+}
+
+func looksLikeEmail(s string) bool {
+	at := strings.IndexByte(s, '@')
+	return at > 0 && at < len(s)-1 && !strings.ContainsAny(s, " \t\n")
+}
+
+// Signup creates a new organization and its first (admin) user, and starts
+// a session for them, all in a single transaction — a partially-created
+// org with no admin user should never be observable.
+func Signup(ctx context.Context, pool *pgxpool.Pool, sessions *session.Store, in SignupInput) (session.Identity, error) {
+	if err := in.validate(); err != nil {
+		return session.Identity{}, err
+	}
+
+	hash, err := HashPassword(in.Password)
+	if err != nil {
+		return session.Identity{}, err
+	}
+
+	slug, err := uniqueOrgSlug(ctx, sqlc.New(pool), org.Slugify(in.OrgName))
+	if err != nil {
+		return session.Identity{}, err
+	}
+
+	tx, err := pool.Begin(ctx)
+	if err != nil {
+		return session.Identity{}, err
+	}
+	defer tx.Rollback(ctx) //nolint:errcheck // no-op once committed
+
+	q := sqlc.New(tx)
+
+	orgID := id.New()
+	orgRow, err := q.CreateOrganization(ctx, sqlc.CreateOrganizationParams{
+		ID:       db.MustUUID(orgID),
+		Name:     in.OrgName,
+		Slug:     slug,
+		Timezone: "UTC",
+	})
+	if err != nil {
+		if db.IsUniqueViolation(err) {
+			return session.Identity{}, ErrSlugTaken
+		}
+		return session.Identity{}, err
+	}
+
+	userID := id.New()
+	userRow, err := q.CreateUser(ctx, sqlc.CreateUserParams{
+		ID:           db.MustUUID(userID),
+		OrgID:        orgRow.ID,
+		Email:        in.AdminEmail,
+		Name:         in.AdminName,
+		PasswordHash: hash,
+		Role:         string(tenant.RoleAdmin),
+	})
+	if err != nil {
+		if db.IsUniqueViolation(err) {
+			return session.Identity{}, ErrEmailTaken
+		}
+		return session.Identity{}, err
+	}
+
+	ident, err := sessions.WithTx(tx).Create(ctx, userID, orgID, in.UserAgent, in.IP)
+	if err != nil {
+		return session.Identity{}, err
+	}
+
+	if err := tx.Commit(ctx); err != nil {
+		return session.Identity{}, err
+	}
+
+	ident.Email = userRow.Email
+	ident.Name = userRow.Name
+	ident.Role = tenant.RoleAdmin
+	return ident, nil
+}
+
+// uniqueOrgSlug finds an available slug starting from base, trying
+// "base-2", "base-3", ... on collision. A small residual TOCTOU race is
+// possible (caught by the DB unique constraint and surfaced as
+// ErrSlugTaken) but acceptable for the low-frequency signup path.
+func uniqueOrgSlug(ctx context.Context, q *sqlc.Queries, base string) (string, error) {
+	candidate := base
+	for i := 1; i <= 25; i++ {
+		_, err := q.GetOrganizationBySlug(ctx, candidate)
+		if errors.Is(err, pgx.ErrNoRows) {
+			return candidate, nil
+		}
+		if err != nil {
+			return "", err
+		}
+		candidate = fmt.Sprintf("%s-%d", base, i+1)
+	}
+	return "", ErrSlugTaken
+}
