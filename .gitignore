@@ -1,0 +1,14 @@
+.env
+*.local
+
+# Build artifacts
+/bin/
+/tmp/
+/scripts/tailwindcss
+
+# OS
+.DS_Store
+
+# Editors
+.vscode/
+.idea/

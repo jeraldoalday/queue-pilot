@@ -1,0 +1,18 @@
+services:
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    env_file:
+      - .env
+    ports:
+      - "5432:5432"
+    volumes:
+      - queuepilot_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-queuepilot} -d ${POSTGRES_DB:-queuepilot}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+volumes:
+  queuepilot_pgdata:
