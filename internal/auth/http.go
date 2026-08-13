@@ -10,6 +10,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/jeraldoalday/queuepilot/internal/session"
+	"github.com/jeraldoalday/queuepilot/internal/tenant"
 )
 
 type Handlers struct {
@@ -82,6 +83,34 @@ func (h *Handlers) PostLogout(w http.ResponseWriter, r *http.Request) {
 	}
 	session.ClearCookie(w, h.cookieSecure)
 	http.Redirect(w, r, "/login", http.StatusSeeOther)
+}
+
+func (h *Handlers) GetNewStaff(w http.ResponseWriter, r *http.Request) {
+	ident, _ := CurrentIdentity(r.Context())
+	render(w, r, NewStaffPage("", ident.CSRFToken))
+}
+
+func (h *Handlers) PostNewStaff(w http.ResponseWriter, r *http.Request) {
+	orgID, err := tenant.RequireOrgID(r.Context())
+	if err != nil {
+		http.Error(w, "forbidden", http.StatusForbidden)
+		return
+	}
+
+	ident, _ := CurrentIdentity(r.Context())
+	in := CreateStaffInput{
+		Name:     r.FormValue("name"),
+		Email:    r.FormValue("email"),
+		Password: r.FormValue("password"),
+	}
+
+	if _, err := CreateStaffUser(r.Context(), h.pool, orgID, in); err != nil {
+		w.WriteHeader(http.StatusUnprocessableEntity)
+		render(w, r, NewStaffPage(h.userFacingError(err), ident.CSRFToken))
+		return
+	}
+
+	http.Redirect(w, r, "/app", http.StatusSeeOther)
 }
 
 // userFacingError returns a message safe to show the user, logging

@@ -11,6 +11,7 @@ import (
 	sqlcgen "github.com/jeraldoalday/queuepilot/internal/db/sqlc"
 	"github.com/jeraldoalday/queuepilot/internal/platform/clock"
 	"github.com/jeraldoalday/queuepilot/internal/session"
+	"github.com/jeraldoalday/queuepilot/internal/tenant"
 )
 
 type Server struct {
@@ -47,10 +48,14 @@ func (s *Server) Routes() http.Handler {
 	mux.HandleFunc("POST /signup", s.auth.PostSignup)
 	mux.HandleFunc("GET /login", s.auth.GetLogin)
 	mux.HandleFunc("POST /login", s.auth.PostLogin)
-	mux.HandleFunc("POST /logout", s.auth.PostLogout)
 
 	requireAuth := auth.RequireAuth(s.sessions, s.log)
+	requireAdmin := auth.RequireRole(tenant.RoleAdmin)
+
+	mux.Handle("POST /logout", requireAuth(auth.RequireCSRF(http.HandlerFunc(s.auth.PostLogout))))
 	mux.Handle("GET /app", requireAuth(http.HandlerFunc(s.handleAppHome)))
+	mux.Handle("GET /app/staff/new", requireAuth(requireAdmin(http.HandlerFunc(s.auth.GetNewStaff))))
+	mux.Handle("POST /app/staff", requireAuth(requireAdmin(auth.RequireCSRF(http.HandlerFunc(s.auth.PostNewStaff)))))
 
 	return mux
 }

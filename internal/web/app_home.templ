@@ -2,6 +2,7 @@ package web
 
 import (
 	"github.com/jeraldoalday/queuepilot/internal/session"
+	"github.com/jeraldoalday/queuepilot/internal/tenant"
 	"github.com/jeraldoalday/queuepilot/internal/web/components"
 )
 
@@ -12,7 +13,13 @@ templ AppHome(ident session.Identity) {
 			<p class="mt-2 text-sm text-slate-600">
 				Signed in as { ident.Email } · role: { string(ident.Role) }
 			</p>
+			if ident.Role == tenant.RoleAdmin {
+				<p class="mt-4">
+					<a href="/app/staff/new" class="text-sm font-medium text-slate-900 underline">Add a staff member</a>
+				</p>
+			}
 			<form method="POST" action="/logout" class="mt-8">
+				<input type="hidden" name="csrf_token" value={ ident.CSRFToken }/>
 				<button type="submit" class="rounded-md border border-slate-300 px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-100">
 					Log out
 				</button>
