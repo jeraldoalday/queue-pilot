@@ -69,3 +69,14 @@ func Timestamptz(t time.Time) pgtype.Timestamptz {
 func Time(t pgtype.Timestamptz) time.Time {
 	return t.Time
 }
+
+// TimeOfDayFromMinutes converts minutes-since-midnight into a Postgres
+// TIME value, for staff_availability.start_time/end_time.
+func TimeOfDayFromMinutes(minutes int) pgtype.Time {
+	return pgtype.Time{Microseconds: int64(minutes) * 60 * 1_000_000, Valid: true}
+}
+
+// MinutesOfDay converts a Postgres TIME value back to minutes-since-midnight.
+func MinutesOfDay(t pgtype.Time) int {
+	return int(t.Microseconds / (60 * 1_000_000))
+}

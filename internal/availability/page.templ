@@ -1,0 +1,84 @@
+package availability
+
+import (
+	"fmt"
+
+	"github.com/jeraldoalday/queuepilot/internal/db"
+	"github.com/jeraldoalday/queuepilot/internal/db/sqlc"
+	"github.com/jeraldoalday/queuepilot/internal/web/components"
+)
+
+var weekdayNames = [7]string{"Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"}
+
+func formatTimeOfDay(minutes int) string {
+	return fmt.Sprintf("%02d:%02d", minutes/60, minutes%60)
+}
+
+templ AvailabilityPage(staffUser sqlc.User, hours []sqlc.StaffAvailability, csrfToken string) {
+	@components.Layout("Availability") {
+		<main class="mx-auto max-w-2xl px-6 py-16">
+			<p class="mb-4"><a href="/app/staff" class="text-sm text-slate-600 underline">&larr; Staff</a></p>
+			<h1 class="text-2xl font-semibold tracking-tight">{ staffUser.Name }'s availability</h1>
+			<div class="mt-6">
+				@AvailabilityList(staffUser, hours, csrfToken)
+			</div>
+		</main>
+	}
+}
+
+templ AvailabilityList(staffUser sqlc.User, hours []sqlc.StaffAvailability, csrfToken string) {
+	<div id="availability-app">
+		<form
+			hx-post={ "/app/staff/" + db.UUIDString(staffUser.ID) + "/availability" }
+			hx-target="#availability-app"
+			hx-swap="outerHTML"
+			class="flex flex-wrap items-end gap-3 rounded-md border border-slate-200 bg-white p-4"
+		>
+			<input type="hidden" name="csrf_token" value={ csrfToken }/>
+			<div>
+				<label class="block text-xs font-medium text-slate-700">Day</label>
+				<select name="weekday" class="mt-1 rounded-md border border-slate-300 px-2 py-1.5 text-sm">
+					for i, name := range weekdayNames {
+						<option value={ fmt.Sprintf("%d", i) }>{ name }</option>
+					}
+				</select>
+			</div>
+			<div>
+				<label class="block text-xs font-medium text-slate-700">Start</label>
+				<input type="time" name="start_time" required class="mt-1 rounded-md border border-slate-300 px-2 py-1.5 text-sm"/>
+			</div>
+			<div>
+				<label class="block text-xs font-medium text-slate-700">End</label>
+				<input type="time" name="end_time" required class="mt-1 rounded-md border border-slate-300 px-2 py-1.5 text-sm"/>
+			</div>
+			<button type="submit" class="rounded-md bg-slate-900 px-3 py-2 text-sm font-medium text-white hover:bg-slate-700">
+				Add hours
+			</button>
+		</form>
+
+		<table class="mt-6 w-full border-collapse text-sm">
+			<tbody>
+				for _, h := range hours {
+					<tr class="border-b border-slate-100">
+						<td class="py-2 pr-4 font-medium">{ weekdayNames[h.Weekday] }</td>
+						<td class="py-2 pr-4">{ formatTimeOfDay(db.MinutesOfDay(h.StartTime)) } - { formatTimeOfDay(db.MinutesOfDay(h.EndTime)) }</td>
+						<td class="py-2 text-right">
+							<button
+								hx-delete={ "/app/staff/" + db.UUIDString(staffUser.ID) + "/availability/" + db.UUIDString(h.ID) }
+								hx-vals={ fmt.Sprintf(`{"csrf_token":"%s"}`, csrfToken) }
+								hx-target="#availability-app"
+								hx-swap="outerHTML"
+								class="text-red-600 underline"
+							>
+								Remove
+							</button>
+						</td>
+					</tr>
+				}
+			</tbody>
+		</table>
+		if len(hours) == 0 {
+			<p class="mt-4 text-sm text-slate-500">No recurring hours set yet.</p>
+		}
+	</div>
+}

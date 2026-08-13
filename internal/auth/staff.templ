@@ -1,6 +1,40 @@
 package auth
 
-import "github.com/jeraldoalday/queuepilot/internal/web/components"
+import (
+	"github.com/jeraldoalday/queuepilot/internal/db"
+	"github.com/jeraldoalday/queuepilot/internal/db/sqlc"
+	"github.com/jeraldoalday/queuepilot/internal/web/components"
+)
+
+templ StaffListPage(staff []sqlc.ListStaffUsersByOrgRow) {
+	@components.Layout("Staff") {
+		<main class="mx-auto max-w-2xl px-6 py-16">
+			<p class="mb-4"><a href="/app" class="text-sm text-slate-600 underline">&larr; Dashboard</a></p>
+			<div class="flex items-center justify-between">
+				<h1 class="text-2xl font-semibold tracking-tight">Staff</h1>
+				<a href="/app/staff/new" class="text-sm font-medium text-slate-900 underline">Add a staff member</a>
+			</div>
+			if len(staff) == 0 {
+				<p class="mt-6 text-sm text-slate-500">No staff members yet.</p>
+			}
+			<table class="mt-6 w-full border-collapse text-sm">
+				<tbody>
+					for _, st := range staff {
+						<tr class="border-b border-slate-100">
+							<td class="py-2 pr-4 font-medium">{ st.Name }</td>
+							<td class="py-2 pr-4 text-slate-500">{ st.Email }</td>
+							<td class="py-2 text-right">
+								<a href={ templ.SafeURL("/app/staff/" + db.UUIDString(st.ID) + "/availability") } class="text-slate-600 underline">
+									Manage availability
+								</a>
+							</td>
+						</tr>
+					}
+				</tbody>
+			</table>
+		</main>
+	}
+}
 
 templ NewStaffPage(errMsg, csrfToken string) {
 	@components.Layout("Add staff") {

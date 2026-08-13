@@ -16,7 +16,7 @@ templ AppHome(ident session.Identity) {
 			if ident.Role == tenant.RoleAdmin {
 				<p class="mt-4 space-x-4">
 					<a href="/app/services" class="text-sm font-medium text-slate-900 underline">Manage services</a>
-					<a href="/app/staff/new" class="text-sm font-medium text-slate-900 underline">Add a staff member</a>
+					<a href="/app/staff" class="text-sm font-medium text-slate-900 underline">Manage staff</a>
 				</p>
 			}
 			<form method="POST" action="/logout" class="mt-8">

@@ -61,3 +61,7 @@ func CreateStaffUser(ctx context.Context, pool *pgxpool.Pool, orgID string, in C
 	}
 	return user, nil
 }
+
+func ListStaff(ctx context.Context, pool *pgxpool.Pool, orgID string) ([]sqlc.ListStaffUsersByOrgRow, error) {
+	return sqlc.New(pool).ListStaffUsersByOrg(ctx, db.MustUUID(orgID))
+}

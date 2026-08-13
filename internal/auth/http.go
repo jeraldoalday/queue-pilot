@@ -85,6 +85,22 @@ func (h *Handlers) PostLogout(w http.ResponseWriter, r *http.Request) {
 	http.Redirect(w, r, "/login", http.StatusSeeOther)
 }
 
+func (h *Handlers) GetStaffList(w http.ResponseWriter, r *http.Request) {
+	orgID, err := tenant.RequireOrgID(r.Context())
+	if err != nil {
+		http.Error(w, "forbidden", http.StatusForbidden)
+		return
+	}
+
+	staff, err := ListStaff(r.Context(), h.pool, orgID)
+	if err != nil {
+		h.log.Error("GetStaffList", "error", err)
+		http.Error(w, "internal error", http.StatusInternalServerError)
+		return
+	}
+	render(w, r, StaffListPage(staff))
+}
+
 func (h *Handlers) GetNewStaff(w http.ResponseWriter, r *http.Request) {
 	ident, _ := CurrentIdentity(r.Context())
 	render(w, r, NewStaffPage("", ident.CSRFToken))

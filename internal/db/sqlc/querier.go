@@ -13,10 +13,12 @@ import (
 type Querier interface {
 	AssignStaffService(ctx context.Context, arg AssignStaffServiceParams) error
 	CountOrganizations(ctx context.Context) (int64, error)
+	CreateAvailability(ctx context.Context, arg CreateAvailabilityParams) (StaffAvailability, error)
 	CreateOrganization(ctx context.Context, arg CreateOrganizationParams) (Organization, error)
 	CreateService(ctx context.Context, arg CreateServiceParams) (Service, error)
 	CreateSession(ctx context.Context, arg CreateSessionParams) (Session, error)
 	CreateUser(ctx context.Context, arg CreateUserParams) (User, error)
+	DeleteAvailability(ctx context.Context, arg DeleteAvailabilityParams) error
 	DeleteService(ctx context.Context, arg DeleteServiceParams) error
 	DeleteSession(ctx context.Context, token string) error
 	GetOrganizationByID(ctx context.Context, id pgtype.UUID) (Organization, error)
@@ -27,6 +29,7 @@ type Querier interface {
 	GetUserByEmail(ctx context.Context, lower string) (User, error)
 	GetUserByID(ctx context.Context, arg GetUserByIDParams) (User, error)
 	IsStaffAssignedToService(ctx context.Context, arg IsStaffAssignedToServiceParams) (bool, error)
+	ListAvailabilityByStaff(ctx context.Context, arg ListAvailabilityByStaffParams) ([]StaffAvailability, error)
 	ListServicesByOrg(ctx context.Context, orgID pgtype.UUID) ([]Service, error)
 	ListStaffForService(ctx context.Context, arg ListStaffForServiceParams) ([]ListStaffForServiceRow, error)
 	ListStaffServiceAssignmentsByOrg(ctx context.Context, orgID pgtype.UUID) ([]ListStaffServiceAssignmentsByOrgRow, error)

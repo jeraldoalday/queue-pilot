@@ -91,7 +91,7 @@ func AppHome(ident session.Identity) templ.Component {
 				return templ_7745c5c3_Err
 			}
 			if ident.Role == tenant.RoleAdmin {
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 5, "<p class=\"mt-4 space-x-4\"><a href=\"/app/services\" class=\"text-sm font-medium text-slate-900 underline\">Manage services</a> <a href=\"/app/staff/new\" class=\"text-sm font-medium text-slate-900 underline\">Add a staff member</a></p>")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 5, "<p class=\"mt-4 space-x-4\"><a href=\"/app/services\" class=\"text-sm font-medium text-slate-900 underline\">Manage services</a> <a href=\"/app/staff\" class=\"text-sm font-medium text-slate-900 underline\">Manage staff</a></p>")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}

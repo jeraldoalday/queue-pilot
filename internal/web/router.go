@@ -7,6 +7,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/jeraldoalday/queuepilot/internal/auth"
+	"github.com/jeraldoalday/queuepilot/internal/availability"
 	"github.com/jeraldoalday/queuepilot/internal/catalog"
 	"github.com/jeraldoalday/queuepilot/internal/config"
 	sqlcgen "github.com/jeraldoalday/queuepilot/internal/db/sqlc"
@@ -16,25 +17,27 @@ import (
 )
 
 type Server struct {
-	cfg      config.Config
-	log      *slog.Logger
-	pool     *pgxpool.Pool
-	queries  *sqlcgen.Queries
-	sessions *session.Store
-	auth     *auth.Handlers
-	catalog  *catalog.Handlers
+	cfg          config.Config
+	log          *slog.Logger
+	pool         *pgxpool.Pool
+	queries      *sqlcgen.Queries
+	sessions     *session.Store
+	auth         *auth.Handlers
+	catalog      *catalog.Handlers
+	availability *availability.Handlers
 }
 
 func NewServer(cfg config.Config, log *slog.Logger, pool *pgxpool.Pool) *Server {
 	sessions := session.NewStore(pool, clock.Real{})
 	return &Server{
-		cfg:      cfg,
-		log:      log,
-		pool:     pool,
-		queries:  sqlcgen.New(pool),
-		sessions: sessions,
-		auth:     auth.NewHandlers(pool, sessions, cfg.SessionCookieSecure, log),
-		catalog:  catalog.NewHandlers(pool, log),
+		cfg:          cfg,
+		log:          log,
+		pool:         pool,
+		queries:      sqlcgen.New(pool),
+		sessions:     sessions,
+		auth:         auth.NewHandlers(pool, sessions, cfg.SessionCookieSecure, log),
+		catalog:      catalog.NewHandlers(pool, log),
+		availability: availability.NewHandlers(pool, log),
 	}
 }
 
@@ -57,8 +60,13 @@ func (s *Server) Routes() http.Handler {
 
 	mux.Handle("POST /logout", requireAuth(auth.RequireCSRF(http.HandlerFunc(s.auth.PostLogout))))
 	mux.Handle("GET /app", requireAuth(http.HandlerFunc(s.handleAppHome)))
+	mux.Handle("GET /app/staff", requireAuth(requireAdmin(http.HandlerFunc(s.auth.GetStaffList))))
 	mux.Handle("GET /app/staff/new", requireAuth(requireAdmin(http.HandlerFunc(s.auth.GetNewStaff))))
 	mux.Handle("POST /app/staff", requireAuth(requireAdmin(auth.RequireCSRF(http.HandlerFunc(s.auth.PostNewStaff)))))
+
+	mux.Handle("GET /app/staff/{staffID}/availability", requireAuth(requireAdmin(http.HandlerFunc(s.availability.GetAvailability))))
+	mux.Handle("POST /app/staff/{staffID}/availability", requireAuth(requireAdmin(auth.RequireCSRF(http.HandlerFunc(s.availability.PostAvailability)))))
+	mux.Handle("DELETE /app/staff/{staffID}/availability/{id}", requireAuth(requireAdmin(auth.RequireCSRF(http.HandlerFunc(s.availability.DeleteAvailabilityHandler)))))
 
 	mux.Handle("GET /app/services", requireAuth(requireAdmin(http.HandlerFunc(s.catalog.GetServices))))
 	mux.Handle("POST /app/services", requireAuth(requireAdmin(auth.RequireCSRF(http.HandlerFunc(s.catalog.PostServices)))))
