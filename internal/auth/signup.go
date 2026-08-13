@@ -11,8 +11,8 @@ import (
 
 	"github.com/jeraldoalday/queuepilot/internal/db"
 	"github.com/jeraldoalday/queuepilot/internal/db/sqlc"
-	"github.com/jeraldoalday/queuepilot/internal/org"
 	"github.com/jeraldoalday/queuepilot/internal/platform/id"
+	"github.com/jeraldoalday/queuepilot/internal/platform/slug"
 	"github.com/jeraldoalday/queuepilot/internal/session"
 	"github.com/jeraldoalday/queuepilot/internal/tenant"
 )
@@ -73,7 +73,7 @@ func Signup(ctx context.Context, pool *pgxpool.Pool, sessions *session.Store, in
 		return session.Identity{}, err
 	}
 
-	slug, err := uniqueOrgSlug(ctx, sqlc.New(pool), org.Slugify(in.OrgName))
+	orgSlug, err := uniqueOrgSlug(ctx, sqlc.New(pool), slug.Slugify(in.OrgName))
 	if err != nil {
 		return session.Identity{}, err
 	}
@@ -90,7 +90,7 @@ func Signup(ctx context.Context, pool *pgxpool.Pool, sessions *session.Store, in
 	orgRow, err := q.CreateOrganization(ctx, sqlc.CreateOrganizationParams{
 		ID:       db.MustUUID(orgID),
 		Name:     in.OrgName,
-		Slug:     slug,
+		Slug:     orgSlug,
 		Timezone: "UTC",
 	})
 	if err != nil {

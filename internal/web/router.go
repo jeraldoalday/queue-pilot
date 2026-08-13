@@ -7,6 +7,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/jeraldoalday/queuepilot/internal/auth"
+	"github.com/jeraldoalday/queuepilot/internal/catalog"
 	"github.com/jeraldoalday/queuepilot/internal/config"
 	sqlcgen "github.com/jeraldoalday/queuepilot/internal/db/sqlc"
 	"github.com/jeraldoalday/queuepilot/internal/platform/clock"
@@ -21,6 +22,7 @@ type Server struct {
 	queries  *sqlcgen.Queries
 	sessions *session.Store
 	auth     *auth.Handlers
+	catalog  *catalog.Handlers
 }
 
 func NewServer(cfg config.Config, log *slog.Logger, pool *pgxpool.Pool) *Server {
@@ -32,6 +34,7 @@ func NewServer(cfg config.Config, log *slog.Logger, pool *pgxpool.Pool) *Server 
 		queries:  sqlcgen.New(pool),
 		sessions: sessions,
 		auth:     auth.NewHandlers(pool, sessions, cfg.SessionCookieSecure, log),
+		catalog:  catalog.NewHandlers(pool, log),
 	}
 }
 
@@ -56,6 +59,14 @@ func (s *Server) Routes() http.Handler {
 	mux.Handle("GET /app", requireAuth(http.HandlerFunc(s.handleAppHome)))
 	mux.Handle("GET /app/staff/new", requireAuth(requireAdmin(http.HandlerFunc(s.auth.GetNewStaff))))
 	mux.Handle("POST /app/staff", requireAuth(requireAdmin(auth.RequireCSRF(http.HandlerFunc(s.auth.PostNewStaff)))))
+
+	mux.Handle("GET /app/services", requireAuth(requireAdmin(http.HandlerFunc(s.catalog.GetServices))))
+	mux.Handle("POST /app/services", requireAuth(requireAdmin(auth.RequireCSRF(http.HandlerFunc(s.catalog.PostServices)))))
+	mux.Handle("GET /app/services/{id}", requireAuth(requireAdmin(http.HandlerFunc(s.catalog.GetServiceRow))))
+	mux.Handle("GET /app/services/{id}/edit", requireAuth(requireAdmin(http.HandlerFunc(s.catalog.GetServiceEdit))))
+	mux.Handle("PUT /app/services/{id}", requireAuth(requireAdmin(auth.RequireCSRF(http.HandlerFunc(s.catalog.PutService)))))
+	mux.Handle("DELETE /app/services/{id}", requireAuth(requireAdmin(auth.RequireCSRF(http.HandlerFunc(s.catalog.DeleteServiceHandler)))))
+	mux.Handle("POST /app/services/{id}/staff/{staffID}/toggle", requireAuth(requireAdmin(auth.RequireCSRF(http.HandlerFunc(s.catalog.PostToggleStaff)))))
 
 	return mux
 }

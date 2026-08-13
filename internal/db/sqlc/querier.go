@@ -11,17 +11,29 @@ import (
 )
 
 type Querier interface {
+	AssignStaffService(ctx context.Context, arg AssignStaffServiceParams) error
 	CountOrganizations(ctx context.Context) (int64, error)
 	CreateOrganization(ctx context.Context, arg CreateOrganizationParams) (Organization, error)
+	CreateService(ctx context.Context, arg CreateServiceParams) (Service, error)
 	CreateSession(ctx context.Context, arg CreateSessionParams) (Session, error)
 	CreateUser(ctx context.Context, arg CreateUserParams) (User, error)
+	DeleteService(ctx context.Context, arg DeleteServiceParams) error
 	DeleteSession(ctx context.Context, token string) error
 	GetOrganizationByID(ctx context.Context, id pgtype.UUID) (Organization, error)
 	GetOrganizationBySlug(ctx context.Context, slug string) (Organization, error)
+	GetService(ctx context.Context, arg GetServiceParams) (Service, error)
+	GetServiceBySlug(ctx context.Context, arg GetServiceBySlugParams) (Service, error)
 	GetSessionWithUser(ctx context.Context, token string) (GetSessionWithUserRow, error)
 	GetUserByEmail(ctx context.Context, lower string) (User, error)
 	GetUserByID(ctx context.Context, arg GetUserByIDParams) (User, error)
+	IsStaffAssignedToService(ctx context.Context, arg IsStaffAssignedToServiceParams) (bool, error)
+	ListServicesByOrg(ctx context.Context, orgID pgtype.UUID) ([]Service, error)
+	ListStaffForService(ctx context.Context, arg ListStaffForServiceParams) ([]ListStaffForServiceRow, error)
+	ListStaffServiceAssignmentsByOrg(ctx context.Context, orgID pgtype.UUID) ([]ListStaffServiceAssignmentsByOrgRow, error)
+	ListStaffUsersByOrg(ctx context.Context, orgID pgtype.UUID) ([]ListStaffUsersByOrgRow, error)
 	TouchSession(ctx context.Context, token string) error
+	UnassignStaffService(ctx context.Context, arg UnassignStaffServiceParams) error
+	UpdateService(ctx context.Context, arg UpdateServiceParams) (Service, error)
 }
 
 var _ Querier = (*Queries)(nil)

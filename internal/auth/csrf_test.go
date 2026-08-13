@@ -81,6 +81,35 @@ func TestRequireCSRFAcceptsMatchingToken(t *testing.T) {
 	}
 }
 
+// TestRequireCSRFAcceptsTokenOnDELETE guards against a real bug caught by
+// manual testing against a live server: http.Request.ParseForm only reads
+// the body for POST/PUT/PATCH, so a DELETE request (which is how
+// hx-delete sends its CSRF token, per htmx's convention of putting
+// non-GET params in the body) was silently failing CSRF verification
+// even with a correct token.
+func TestRequireCSRFAcceptsTokenOnDELETE(t *testing.T) {
+	called := false
+	next := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		called = true
+		w.WriteHeader(http.StatusOK)
+	})
+
+	form := url.Values{"csrf_token": {"correct-token"}}
+	req := httptest.NewRequest(http.MethodDelete, "/app/services/svc-1", strings.NewReader(form.Encode()))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req = withTestIdentity(req, "correct-token")
+	rec := httptest.NewRecorder()
+
+	RequireCSRF(next).ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Errorf("status = %d, want 200", rec.Code)
+	}
+	if !called {
+		t.Error("DELETE with a correct body CSRF token was rejected")
+	}
+}
+
 func TestRequireCSRFPassesThroughGET(t *testing.T) {
 	called := false
 	next := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { called = true })
