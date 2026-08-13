@@ -6,17 +6,25 @@ Tailwind CSS — one binary, no Node/npm build step.
 
 ## Status
 
-Under active scaffold development. See `PLAN.md` (not committed — internal
-build plan) for the day-by-day build sequence. Currently: Day 1 (project
-scaffold, health check).
+Under active scaffold development, following a 14-day build plan (see task
+tracker / commit history for day-by-day progress). Through Day 4: project
+scaffold, schema/migrations, auth (signup/login/sessions), RBAC, CSRF, and
+the cross-tenant isolation guarantee — all verified against a real
+Postgres instance.
 
 ## Prerequisites
 
 - Go 1.23+
-- Docker + Docker Compose (for local Postgres) — this repo assumes the
-  `docker` and `docker compose` CLIs are on `PATH`. On macOS without
-  Docker Desktop, [Colima](https://github.com/abiosoft/colima) works too:
-  `brew install colima docker docker-compose && colima start`.
+- A Postgres database. Either works:
+  - **Hosted (current dev setup)**: a [Supabase](https://supabase.com)
+    project's Postgres connection string. Use the direct or session-mode
+    pooler connection (port 5432), not the transaction-mode pooler
+    (6543) — the app uses prepared statements. Set it as `DATABASE_URL`
+    in `.env`.
+  - **Local via Docker**: `docker compose up -d db` using the bundled
+    `docker-compose.yml`. On macOS without Docker Desktop,
+    [Colima](https://github.com/abiosoft/colima) works too:
+    `brew install colima docker docker-compose && colima start`.
 - [`migrate`](https://github.com/golang-migrate/migrate) CLI:
   `go install -tags 'postgres' github.com/golang-migrate/migrate/v4/cmd/migrate@latest`
 - [`sqlc`](https://sqlc.dev): `go install github.com/sqlc-dev/sqlc/cmd/sqlc@latest`
@@ -26,8 +34,7 @@ scaffold, health check).
 ## Local development
 
 ```sh
-cp .env.example .env        # first time only
-make docker-up               # starts Postgres in Docker
+cp .env.example .env         # first time only; then set DATABASE_URL
 make migrate-up              # applies migrations
 make templ-generate          # generates Go from .templ files
 make tailwind-build          # builds internal/web/static/css/app.css
