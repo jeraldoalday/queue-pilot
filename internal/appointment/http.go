@@ -8,11 +8,13 @@ import (
 	"time"
 
 	"github.com/a-h/templ"
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/jeraldoalday/queuepilot/internal/auth"
 	"github.com/jeraldoalday/queuepilot/internal/availability"
 	"github.com/jeraldoalday/queuepilot/internal/catalog"
+	"github.com/jeraldoalday/queuepilot/internal/db"
 	"github.com/jeraldoalday/queuepilot/internal/db/sqlc"
 	"github.com/jeraldoalday/queuepilot/internal/org"
 	"github.com/jeraldoalday/queuepilot/internal/tenant"
@@ -167,6 +169,55 @@ func (h *Handlers) PostAppointment(w http.ResponseWriter, r *http.Request) {
 	// out-of-band in the same response.
 	render(w, r, BookedConfirmation(appt, day, services, staff, loc, ident.CSRFToken))
 	render(w, r, ScheduleListOOB(appts, loc, ident.CSRFToken))
+}
+
+// PostStatus applies a lifecycle transition (complete / no-show / cancel)
+// and re-renders the day's list.
+func (h *Handlers) PostStatus(w http.ResponseWriter, r *http.Request) {
+	orgID, err := tenant.RequireOrgID(r.Context())
+	if err != nil {
+		http.Error(w, "forbidden", http.StatusForbidden)
+		return
+	}
+	ident, _ := auth.CurrentIdentity(r.Context())
+
+	to, ok := ParseStatus(r.FormValue("status"))
+	if !ok {
+		http.Error(w, "unknown status", http.StatusBadRequest)
+		return
+	}
+
+	appt, err := SetStatus(r.Context(), h.pool, orgID, r.PathValue("id"), to)
+	if err != nil {
+		switch {
+		case errors.Is(err, pgx.ErrNoRows):
+			http.NotFound(w, r)
+		case errors.Is(err, ErrInvalidTransition):
+			http.Error(w, "that appointment can no longer change status", http.StatusConflict)
+		default:
+			h.log.Error("PostStatus", "error", err)
+			http.Error(w, "internal error", http.StatusInternalServerError)
+		}
+		return
+	}
+
+	loc, err := org.Location(r.Context(), h.pool, orgID)
+	if err != nil {
+		h.log.Error("PostStatus: org location", "error", err)
+		http.Error(w, "internal error", http.StatusInternalServerError)
+		return
+	}
+
+	// Re-render the day the appointment actually falls on, so the list
+	// stays consistent even if the page was showing a different date.
+	day := db.Time(appt.StartsAt).In(loc)
+	appts, err := ListForOrgOnDay(r.Context(), h.pool, orgID, day)
+	if err != nil {
+		h.log.Error("PostStatus: list appointments", "error", err)
+		http.Error(w, "internal error", http.StatusInternalServerError)
+		return
+	}
+	render(w, r, ScheduleList(appts, loc, ident.CSRFToken))
 }
 
 func (h *Handlers) slotsOrNil(ctx context.Context, orgID, staffID, serviceID string, day time.Time) ([]availability.Slot, error) {

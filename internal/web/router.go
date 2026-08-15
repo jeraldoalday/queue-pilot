@@ -84,6 +84,7 @@ func (s *Server) Routes() http.Handler {
 	mux.Handle("GET /app/schedule", requireAuth(http.HandlerFunc(s.appointment.GetSchedule)))
 	mux.Handle("POST /app/appointments/slots", requireAuth(auth.RequireCSRF(http.HandlerFunc(s.appointment.PostSlots))))
 	mux.Handle("POST /app/appointments", requireAuth(auth.RequireCSRF(http.HandlerFunc(s.appointment.PostAppointment))))
+	mux.Handle("POST /app/appointments/{id}/status", requireAuth(auth.RequireCSRF(http.HandlerFunc(s.appointment.PostStatus))))
 
 	return mux
 }

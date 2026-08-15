@@ -76,6 +76,7 @@ templ ScheduleList(appts []sqlc.ListAppointmentsForOrgOnDayRow, loc *time.Locati
 						<th class="py-2 pr-4">Staff</th>
 						<th class="py-2 pr-4">Customer</th>
 						<th class="py-2 pr-4">Status</th>
+						<th class="py-2"></th>
 					</tr>
 				</thead>
 				<tbody>
@@ -91,12 +92,33 @@ templ ScheduleList(appts []sqlc.ListAppointmentsForOrgOnDayRow, loc *time.Locati
 								<span class="block text-xs text-slate-500">{ a.CustomerEmail }</span>
 							</td>
 							<td class={ "py-2 pr-4 " + statusClass(a.Status) }>{ a.Status }</td>
+							<td class="py-2 text-right whitespace-nowrap">
+								if Status(a.Status) == StatusBooked {
+									@statusButton(db.UUIDString(a.ID), StatusCompleted, "Complete", "text-slate-600", csrfToken)
+									@statusButton(db.UUIDString(a.ID), StatusNoShow, "No-show", "text-amber-700", csrfToken)
+									@statusButton(db.UUIDString(a.ID), StatusCancelled, "Cancel", "text-red-600", csrfToken)
+								}
+							</td>
 						</tr>
 					}
 				</tbody>
 			</table>
 		}
 	</div>
+}
+
+// statusButton posts a lifecycle transition and swaps the whole schedule
+// list back in, so the row's available actions reflect its new state.
+templ statusButton(apptID string, to Status, label, colorClass, csrfToken string) {
+	<button
+		hx-post={ "/app/appointments/" + apptID + "/status" }
+		hx-vals={ fmt.Sprintf(`{"csrf_token":"%s","status":"%s"}`, csrfToken, string(to)) }
+		hx-target="#schedule-list"
+		hx-swap="innerHTML"
+		class={ "ml-2 underline " + colorClass }
+	>
+		{ label }
+	</button>
 }
 
 // BookingForm is re-rendered by htmx as the admin picks a service/staff/date,
