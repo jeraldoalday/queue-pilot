@@ -13,8 +13,11 @@ templ AppHome(ident session.Identity) {
 			<p class="mt-2 text-sm text-slate-600">
 				Signed in as { ident.Email } · role: { string(ident.Role) }
 			</p>
+			<p class="mt-4">
+				<a href="/app/schedule" class="text-sm font-medium text-slate-900 underline">Schedule</a>
+			</p>
 			if ident.Role == tenant.RoleAdmin {
-				<p class="mt-4 space-x-4">
+				<p class="mt-2 space-x-4">
 					<a href="/app/services" class="text-sm font-medium text-slate-900 underline">Manage services</a>
 					<a href="/app/staff" class="text-sm font-medium text-slate-900 underline">Manage staff</a>
 				</p>

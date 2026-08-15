@@ -13,6 +13,13 @@ import (
 type Querier interface {
 	AssignStaffService(ctx context.Context, arg AssignStaffServiceParams) error
 	CountOrganizations(ctx context.Context) (int64, error)
+	// Half-open overlap test: an existing booking conflicts only if it starts
+	// before the new one ends AND ends after the new one starts, so bookings
+	// that merely touch at a boundary don't count as conflicts. Params are
+	// named explicitly because positional names sqlc infers here read
+	// backwards (it names them after the compared column, not the argument).
+	CountOverlappingAppointments(ctx context.Context, arg CountOverlappingAppointmentsParams) (int64, error)
+	CreateAppointment(ctx context.Context, arg CreateAppointmentParams) (Appointment, error)
 	CreateAvailability(ctx context.Context, arg CreateAvailabilityParams) (StaffAvailability, error)
 	CreateOrganization(ctx context.Context, arg CreateOrganizationParams) (Organization, error)
 	CreateService(ctx context.Context, arg CreateServiceParams) (Service, error)
@@ -21,6 +28,7 @@ type Querier interface {
 	DeleteAvailability(ctx context.Context, arg DeleteAvailabilityParams) error
 	DeleteService(ctx context.Context, arg DeleteServiceParams) error
 	DeleteSession(ctx context.Context, token string) error
+	GetAppointment(ctx context.Context, arg GetAppointmentParams) (Appointment, error)
 	GetOrganizationByID(ctx context.Context, id pgtype.UUID) (Organization, error)
 	GetOrganizationBySlug(ctx context.Context, slug string) (Organization, error)
 	GetService(ctx context.Context, arg GetServiceParams) (Service, error)
@@ -29,6 +37,8 @@ type Querier interface {
 	GetUserByEmail(ctx context.Context, lower string) (User, error)
 	GetUserByID(ctx context.Context, arg GetUserByIDParams) (User, error)
 	IsStaffAssignedToService(ctx context.Context, arg IsStaffAssignedToServiceParams) (bool, error)
+	ListAppointmentsForOrgOnDay(ctx context.Context, arg ListAppointmentsForOrgOnDayParams) ([]ListAppointmentsForOrgOnDayRow, error)
+	ListAppointmentsForStaffOnDay(ctx context.Context, arg ListAppointmentsForStaffOnDayParams) ([]Appointment, error)
 	ListAvailabilityByStaff(ctx context.Context, arg ListAvailabilityByStaffParams) ([]StaffAvailability, error)
 	ListServicesByOrg(ctx context.Context, orgID pgtype.UUID) ([]Service, error)
 	ListStaffForService(ctx context.Context, arg ListStaffForServiceParams) ([]ListStaffForServiceRow, error)
@@ -36,6 +46,7 @@ type Querier interface {
 	ListStaffUsersByOrg(ctx context.Context, orgID pgtype.UUID) ([]ListStaffUsersByOrgRow, error)
 	TouchSession(ctx context.Context, token string) error
 	UnassignStaffService(ctx context.Context, arg UnassignStaffServiceParams) error
+	UpdateAppointmentStatus(ctx context.Context, arg UpdateAppointmentStatusParams) (Appointment, error)
 	UpdateService(ctx context.Context, arg UpdateServiceParams) (Service, error)
 }
 

@@ -6,6 +6,7 @@ import (
 
 	"github.com/jackc/pgx/v5/pgxpool"
 
+	"github.com/jeraldoalday/queuepilot/internal/appointment"
 	"github.com/jeraldoalday/queuepilot/internal/auth"
 	"github.com/jeraldoalday/queuepilot/internal/availability"
 	"github.com/jeraldoalday/queuepilot/internal/catalog"
@@ -25,6 +26,7 @@ type Server struct {
 	auth         *auth.Handlers
 	catalog      *catalog.Handlers
 	availability *availability.Handlers
+	appointment  *appointment.Handlers
 }
 
 func NewServer(cfg config.Config, log *slog.Logger, pool *pgxpool.Pool) *Server {
@@ -38,6 +40,7 @@ func NewServer(cfg config.Config, log *slog.Logger, pool *pgxpool.Pool) *Server 
 		auth:         auth.NewHandlers(pool, sessions, cfg.SessionCookieSecure, log),
 		catalog:      catalog.NewHandlers(pool, log),
 		availability: availability.NewHandlers(pool, log),
+		appointment:  appointment.NewHandlers(pool, log),
 	}
 }
 
@@ -75,6 +78,12 @@ func (s *Server) Routes() http.Handler {
 	mux.Handle("PUT /app/services/{id}", requireAuth(requireAdmin(auth.RequireCSRF(http.HandlerFunc(s.catalog.PutService)))))
 	mux.Handle("DELETE /app/services/{id}", requireAuth(requireAdmin(auth.RequireCSRF(http.HandlerFunc(s.catalog.DeleteServiceHandler)))))
 	mux.Handle("POST /app/services/{id}/staff/{staffID}/toggle", requireAuth(requireAdmin(auth.RequireCSRF(http.HandlerFunc(s.catalog.PostToggleStaff)))))
+
+	// Scheduling is available to staff as well as admins — staff need to
+	// see and book the day's appointments, unlike org configuration.
+	mux.Handle("GET /app/schedule", requireAuth(http.HandlerFunc(s.appointment.GetSchedule)))
+	mux.Handle("POST /app/appointments/slots", requireAuth(auth.RequireCSRF(http.HandlerFunc(s.appointment.PostSlots))))
+	mux.Handle("POST /app/appointments", requireAuth(auth.RequireCSRF(http.HandlerFunc(s.appointment.PostAppointment))))
 
 	return mux
 }

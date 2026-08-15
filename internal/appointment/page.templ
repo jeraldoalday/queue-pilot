@@ -1,0 +1,235 @@
+package appointment
+
+import (
+	"fmt"
+	"time"
+
+	"github.com/jeraldoalday/queuepilot/internal/availability"
+	"github.com/jeraldoalday/queuepilot/internal/db"
+	"github.com/jeraldoalday/queuepilot/internal/db/sqlc"
+	"github.com/jeraldoalday/queuepilot/internal/web/components"
+)
+
+const dateFormat = "2006-01-02"
+
+// formatClock renders a stored (UTC) instant in the org's timezone. Every
+// time shown to a user goes through here — formatting in the server's
+// local zone instead would display a slot booked for 09:00 as whatever
+// hour that happens to be where the app runs.
+func formatClock(t time.Time, loc *time.Location) string {
+	return t.In(loc).Format("15:04")
+}
+
+func statusClass(status string) string {
+	switch status {
+	case "booked":
+		return "text-green-700"
+	case "completed":
+		return "text-slate-500"
+	case "cancelled", "no_show":
+		return "text-red-600"
+	default:
+		return "text-slate-500"
+	}
+}
+
+templ SchedulePage(day time.Time, appts []sqlc.ListAppointmentsForOrgOnDayRow, services []sqlc.Service, staff []sqlc.ListStaffUsersByOrgRow, loc *time.Location, csrfToken string) {
+	@components.Layout("Schedule") {
+		<main class="mx-auto max-w-4xl px-6 py-16">
+			<p class="mb-4"><a href="/app" class="text-sm text-slate-600 underline">&larr; Dashboard</a></p>
+			<h1 class="text-2xl font-semibold tracking-tight">Schedule</h1>
+
+			<form method="GET" action="/app/schedule" class="mt-4 flex items-end gap-3">
+				<div>
+					<label for="date" class="block text-xs font-medium text-slate-700">Date</label>
+					<input id="date" name="date" type="date" value={ day.Format(dateFormat) } class="mt-1 rounded-md border border-slate-300 px-2 py-1.5 text-sm"/>
+				</div>
+				<button type="submit" class="rounded-md border border-slate-300 px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-100">
+					Go
+				</button>
+			</form>
+
+			<h2 class="mt-8 text-lg font-medium">Book an appointment</h2>
+			@BookingForm(day, services, staff, nil, "", "", "", loc, csrfToken)
+
+			<h2 class="mt-10 text-lg font-medium">{ day.Format("Monday, 2 January 2006") }</h2>
+			<div id="schedule-list" class="mt-3">
+				@ScheduleList(appts, loc, csrfToken)
+			</div>
+		</main>
+	}
+}
+
+// ScheduleList renders only the list body — the wrapping element (and its
+// #schedule-list id) belongs to the caller, so the id isn't duplicated
+// between the initial page render and the out-of-band swap.
+templ ScheduleList(appts []sqlc.ListAppointmentsForOrgOnDayRow, loc *time.Location, csrfToken string) {
+	<div>
+		if len(appts) == 0 {
+			<p class="text-sm text-slate-500">No appointments booked for this day.</p>
+		} else {
+			<table class="w-full border-collapse text-sm">
+				<thead>
+					<tr class="border-b border-slate-200 text-left text-xs uppercase tracking-wide text-slate-500">
+						<th class="py-2 pr-4">Time</th>
+						<th class="py-2 pr-4">Service</th>
+						<th class="py-2 pr-4">Staff</th>
+						<th class="py-2 pr-4">Customer</th>
+						<th class="py-2 pr-4">Status</th>
+					</tr>
+				</thead>
+				<tbody>
+					for _, a := range appts {
+						<tr class="border-b border-slate-100">
+							<td class="py-2 pr-4 font-medium">
+								{ formatClock(db.Time(a.StartsAt), loc) } - { formatClock(db.Time(a.EndsAt), loc) }
+							</td>
+							<td class="py-2 pr-4">{ a.ServiceName }</td>
+							<td class="py-2 pr-4">{ a.StaffName }</td>
+							<td class="py-2 pr-4">
+								{ a.CustomerName }
+								<span class="block text-xs text-slate-500">{ a.CustomerEmail }</span>
+							</td>
+							<td class={ "py-2 pr-4 " + statusClass(a.Status) }>{ a.Status }</td>
+						</tr>
+					}
+				</tbody>
+			</table>
+		}
+	</div>
+}
+
+// BookingForm is re-rendered by htmx as the admin picks a service/staff/date,
+// so the slot list always reflects the current selection.
+templ BookingForm(day time.Time, services []sqlc.Service, staff []sqlc.ListStaffUsersByOrgRow, slots []availability.Slot, selectedService, selectedStaff, errMsg string, loc *time.Location, csrfToken string) {
+	<div id="booking-form">
+		if errMsg != "" {
+			<p class="mb-3 rounded-md bg-red-50 px-3 py-2 text-sm text-red-700">{ errMsg }</p>
+		}
+		<form
+			hx-post="/app/appointments"
+			hx-target="#booking-form"
+			hx-swap="outerHTML"
+			class="rounded-md border border-slate-200 bg-white p-4"
+		>
+			<input type="hidden" name="csrf_token" value={ csrfToken }/>
+			<input type="hidden" name="date" value={ day.Format(dateFormat) }/>
+
+			<div class="flex flex-wrap items-end gap-3">
+				<div>
+					<label for="service_id" class="block text-xs font-medium text-slate-700">Service</label>
+					<select
+						id="service_id"
+						name="service_id"
+						hx-post="/app/appointments/slots"
+						hx-target="#booking-form"
+						hx-swap="outerHTML"
+						hx-include="closest form"
+						class="mt-1 rounded-md border border-slate-300 px-2 py-1.5 text-sm"
+					>
+						<option value="">Choose a service…</option>
+						for _, s := range services {
+							if db.UUIDString(s.ID) == selectedService {
+								<option value={ db.UUIDString(s.ID) } selected>{ s.Name }</option>
+							} else {
+								<option value={ db.UUIDString(s.ID) }>{ s.Name }</option>
+							}
+						}
+					</select>
+				</div>
+
+				<div>
+					<label for="staff_user_id" class="block text-xs font-medium text-slate-700">Staff</label>
+					<select
+						id="staff_user_id"
+						name="staff_user_id"
+						hx-post="/app/appointments/slots"
+						hx-target="#booking-form"
+						hx-swap="outerHTML"
+						hx-include="closest form"
+						class="mt-1 rounded-md border border-slate-300 px-2 py-1.5 text-sm"
+					>
+						<option value="">Choose staff…</option>
+						for _, st := range staff {
+							if db.UUIDString(st.ID) == selectedStaff {
+								<option value={ db.UUIDString(st.ID) } selected>{ st.Name }</option>
+							} else {
+								<option value={ db.UUIDString(st.ID) }>{ st.Name }</option>
+							}
+						}
+					</select>
+				</div>
+			</div>
+
+			if selectedService != "" && selectedStaff != "" {
+				<div class="mt-4">
+					<span class="block text-xs font-medium text-slate-700">Available slots on { day.Format("2 Jan 2006") }</span>
+					if len(slots) == 0 {
+						<p class="mt-1 text-sm text-slate-500">
+							No slots available — check this staff member's availability for this weekday.
+						</p>
+					} else {
+						<div class="mt-2 flex flex-wrap gap-2">
+							for i, s := range slots {
+								<label class="cursor-pointer">
+									<input
+										type="radio"
+										name="starts_at"
+										value={ s.Start.Format(time.RFC3339) }
+										required
+										checked?={ i == 0 }
+										class="peer sr-only"
+									/>
+									<span class="inline-block rounded-md border border-slate-300 px-2 py-1 text-sm peer-checked:border-slate-900 peer-checked:bg-slate-900 peer-checked:text-white">
+										{ formatClock(s.Start, loc) }
+									</span>
+								</label>
+							}
+						</div>
+					}
+				</div>
+
+				if len(slots) > 0 {
+					<div class="mt-4 flex flex-wrap items-end gap-3">
+						<div>
+							<label for="customer_name" class="block text-xs font-medium text-slate-700">Customer name</label>
+							<input id="customer_name" name="customer_name" type="text" required class="mt-1 rounded-md border border-slate-300 px-2 py-1.5 text-sm"/>
+						</div>
+						<div>
+							<label for="customer_email" class="block text-xs font-medium text-slate-700">Email</label>
+							<input id="customer_email" name="customer_email" type="email" required class="mt-1 rounded-md border border-slate-300 px-2 py-1.5 text-sm"/>
+						</div>
+						<div>
+							<label for="customer_phone" class="block text-xs font-medium text-slate-700">Phone (optional)</label>
+							<input id="customer_phone" name="customer_phone" type="tel" class="mt-1 rounded-md border border-slate-300 px-2 py-1.5 text-sm"/>
+						</div>
+						<button type="submit" class="rounded-md bg-slate-900 px-3 py-2 text-sm font-medium text-white hover:bg-slate-700">
+							Book appointment
+						</button>
+					</div>
+				}
+			} else {
+				<p class="mt-3 text-sm text-slate-500">Choose a service and staff member to see available times.</p>
+			}
+		</form>
+	</div>
+}
+
+// BookedConfirmation replaces the form (the htmx target) after a
+// successful booking, resetting it for the next entry.
+templ BookedConfirmation(appt sqlc.Appointment, day time.Time, services []sqlc.Service, staff []sqlc.ListStaffUsersByOrgRow, loc *time.Location, csrfToken string) {
+	<div id="booking-form">
+		<p class="mb-3 rounded-md bg-green-50 px-3 py-2 text-sm text-green-800">
+			{ fmt.Sprintf("Booked %s for %s at %s.", appt.CustomerName, day.Format("2 Jan"), formatClock(db.Time(appt.StartsAt), loc)) }
+		</p>
+		@BookingForm(day, services, staff, nil, "", "", "", loc, csrfToken)
+	</div>
+}
+
+// ScheduleListOOB updates the day's appointment list out-of-band, so one
+// booking response refreshes both the form and the list below it.
+templ ScheduleListOOB(appts []sqlc.ListAppointmentsForOrgOnDayRow, loc *time.Location, csrfToken string) {
+	<div id="schedule-list" hx-swap-oob="true">
+		@ScheduleList(appts, loc, csrfToken)
+	</div>
+}

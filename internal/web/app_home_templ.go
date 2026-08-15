@@ -86,12 +86,12 @@ func AppHome(ident session.Identity) templ.Component {
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 4, "</p>")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 4, "</p><p class=\"mt-4\"><a href=\"/app/schedule\" class=\"text-sm font-medium text-slate-900 underline\">Schedule</a></p>")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 			if ident.Role == tenant.RoleAdmin {
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 5, "<p class=\"mt-4 space-x-4\"><a href=\"/app/services\" class=\"text-sm font-medium text-slate-900 underline\">Manage services</a> <a href=\"/app/staff\" class=\"text-sm font-medium text-slate-900 underline\">Manage staff</a></p>")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 5, "<p class=\"mt-2 space-x-4\"><a href=\"/app/services\" class=\"text-sm font-medium text-slate-900 underline\">Manage services</a> <a href=\"/app/staff\" class=\"text-sm font-medium text-slate-900 underline\">Manage staff</a></p>")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
@@ -103,7 +103,7 @@ func AppHome(ident session.Identity) templ.Component {
 			var templ_7745c5c3_Var6 string
 			templ_7745c5c3_Var6, templ_7745c5c3_Err = templ.ResolveAttributeValue(ident.CSRFToken)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/app_home.templ`, Line: 23, Col: 66}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/app_home.templ`, Line: 26, Col: 66}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var6)
 			if templ_7745c5c3_Err != nil {

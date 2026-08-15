@@ -13,12 +13,25 @@ import (
 // (23505), returned e.g. when a signup races on an org slug or user email.
 const pgUniqueViolation = "23505"
 
+// pgExclusionViolation is the Postgres error code for exclusion_violation
+// (23P01), returned when an EXCLUDE constraint rejects a row — e.g. two
+// overlapping appointments for the same staff member.
+const pgExclusionViolation = "23P01"
+
 // IsUniqueViolation reports whether err is a Postgres unique constraint
 // violation, so callers can turn it into a friendly "already taken" error
 // instead of a generic 500.
 func IsUniqueViolation(err error) bool {
 	var pgErr *pgconn.PgError
 	return errors.As(err, &pgErr) && pgErr.Code == pgUniqueViolation
+}
+
+// IsExclusionViolation reports whether err is a Postgres EXCLUDE
+// constraint violation, so a lost double-booking race reads as "that slot
+// was just taken" rather than an internal error.
+func IsExclusionViolation(err error) bool {
+	var pgErr *pgconn.PgError
+	return errors.As(err, &pgErr) && pgErr.Code == pgExclusionViolation
 }
 
 // MustUUID converts an application-generated ID (from internal/platform/id)
