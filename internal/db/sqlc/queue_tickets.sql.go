@@ -382,7 +382,9 @@ SET status = $1,
         WHEN $1 IN ('done', 'no_show', 'cancelled') THEN now()
         ELSE completed_at
     END
-WHERE id = $3 AND org_id = $4
+WHERE id = $3
+  AND org_id = $4
+  AND status = $5
 RETURNING id, org_id, queue_id, number, customer_name, customer_phone, status, called_by_user_id, created_at, called_at, serving_at, completed_at, ticket_date
 `
 
@@ -391,18 +393,27 @@ type UpdateTicketStatusParams struct {
 	CalledByUserID pgtype.UUID `json:"called_by_user_id"`
 	ID             pgtype.UUID `json:"id"`
 	OrgID          pgtype.UUID `json:"org_id"`
+	FromStatus     string      `json:"from_status"`
 }
 
 // Stamps the timestamp that matches the new status, so the lifecycle
 // times are recorded by the same statement that moves the ticket and
 // can't drift apart. called_by_user_id is only overwritten when a caller
 // is supplied, so a later transition doesn't erase who called the ticket.
+//
+// from_status makes the write a compare-and-swap: the row only moves if
+// it is still in the state the caller checked the lifecycle against. Two
+// counters acting on the same ticket at once would otherwise both read
+// 'called', both find their move legal, and both write — the second
+// silently overwriting a finished ticket. The loser now updates no rows
+// and reads as a conflict.
 func (q *Queries) UpdateTicketStatus(ctx context.Context, arg UpdateTicketStatusParams) (QueueTicket, error) {
 	row := q.db.QueryRow(ctx, updateTicketStatus,
 		arg.Status,
 		arg.CalledByUserID,
 		arg.ID,
 		arg.OrgID,
+		arg.FromStatus,
 	)
 	var i QueueTicket
 	err := row.Scan(

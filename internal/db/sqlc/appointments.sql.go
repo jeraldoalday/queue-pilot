@@ -256,19 +256,33 @@ func (q *Queries) ListAppointmentsForStaffOnDay(ctx context.Context, arg ListApp
 
 const updateAppointmentStatus = `-- name: UpdateAppointmentStatus :one
 UPDATE appointments
-SET status = $3, updated_at = now()
-WHERE id = $1 AND org_id = $2
+SET status = $1, updated_at = now()
+WHERE id = $2
+  AND org_id = $3
+  AND status = $4
 RETURNING id, org_id, service_id, staff_user_id, customer_name, customer_email, customer_phone, starts_at, ends_at, status, created_at, updated_at
 `
 
 type UpdateAppointmentStatusParams struct {
-	ID     pgtype.UUID `json:"id"`
-	OrgID  pgtype.UUID `json:"org_id"`
-	Status string      `json:"status"`
+	Status     string      `json:"status"`
+	ID         pgtype.UUID `json:"id"`
+	OrgID      pgtype.UUID `json:"org_id"`
+	FromStatus string      `json:"from_status"`
 }
 
+// from_status makes this a compare-and-swap, for the same reason
+// UpdateTicketStatus is one: two staff resolving the same appointment at
+// once would otherwise both read 'booked', both find their move legal,
+// and both write, so whichever request finished second would decide the
+// outcome — a cancellation could overwrite a completion. The loser now
+// updates no rows and is reported as a conflict.
 func (q *Queries) UpdateAppointmentStatus(ctx context.Context, arg UpdateAppointmentStatusParams) (Appointment, error) {
-	row := q.db.QueryRow(ctx, updateAppointmentStatus, arg.ID, arg.OrgID, arg.Status)
+	row := q.db.QueryRow(ctx, updateAppointmentStatus,
+		arg.Status,
+		arg.ID,
+		arg.OrgID,
+		arg.FromStatus,
+	)
 	var i Appointment
 	err := row.Scan(
 		&i.ID,

@@ -153,8 +153,13 @@ func CallNext(ctx context.Context, pool *pgxpool.Pool, orgID, queueID, calledByU
 	}
 
 	called, err := qtx.UpdateTicketStatus(ctx, sqlc.UpdateTicketStatusParams{
-		ID:             next.ID,
-		OrgID:          db.MustUUID(orgID),
+		ID:    next.ID,
+		OrgID: db.MustUUID(orgID),
+		// The row is locked by this transaction and was selected as
+		// 'waiting', so the compare-and-swap can only match. It is still
+		// passed rather than bypassed: the query has one contract, and a
+		// caller exempting itself from it is how the guarantee erodes.
+		FromStatus:     string(StatusWaiting),
 		Status:         string(StatusCalled),
 		CalledByUserID: db.UUIDOrNil(calledByUserID),
 	})
@@ -176,6 +181,14 @@ func CallNext(ctx context.Context, pool *pgxpool.Pool, orgID, queueID, calledByU
 // byUserID is recorded as the caller only when the ticket is being called;
 // for every other transition it is left as-is, so finishing a service
 // doesn't rewrite who originally called the number.
+//
+// The write is conditional on the ticket still being in the status this
+// read saw. A busy counter is exactly where two staff act on one number
+// within the same second — one marking it served, the other a no-show —
+// and without that condition both moves are legal against the same stale
+// read and the later write wins. Losing the race is reported as
+// ErrInvalidTransition, which is what it is from the caller's side: by
+// the time their request landed, the move was no longer legal.
 func SetStatus(ctx context.Context, pool *pgxpool.Pool, orgID, ticketID string, to Status, byUserID string) (sqlc.QueueTicket, error) {
 	q := sqlc.New(pool)
 
@@ -196,12 +209,19 @@ func SetStatus(ctx context.Context, pool *pgxpool.Pool, orgID, ticketID string, 
 		caller = byUserID
 	}
 
-	return q.UpdateTicketStatus(ctx, sqlc.UpdateTicketStatusParams{
+	updated, err := q.UpdateTicketStatus(ctx, sqlc.UpdateTicketStatusParams{
 		ID:             db.MustUUID(ticketID),
 		OrgID:          db.MustUUID(orgID),
+		FromStatus:     current.Status,
 		Status:         string(to),
 		CalledByUserID: db.UUIDOrNil(caller),
 	})
+	if errors.Is(err, pgx.ErrNoRows) {
+		// The ticket exists — it was read a moment ago — so a zero-row
+		// update means only one thing: someone else moved it first.
+		return sqlc.QueueTicket{}, ErrInvalidTransition
+	}
+	return updated, err
 }
 
 // ListOpen returns the day's tickets that are still in play — waiting,

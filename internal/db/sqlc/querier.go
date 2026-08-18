@@ -83,6 +83,12 @@ type Querier interface {
 	QueueStatsForDate(ctx context.Context, arg QueueStatsForDateParams) (QueueStatsForDateRow, error)
 	TouchSession(ctx context.Context, token string) error
 	UnassignStaffService(ctx context.Context, arg UnassignStaffServiceParams) error
+	// from_status makes this a compare-and-swap, for the same reason
+	// UpdateTicketStatus is one: two staff resolving the same appointment at
+	// once would otherwise both read 'booked', both find their move legal,
+	// and both write, so whichever request finished second would decide the
+	// outcome — a cancellation could overwrite a completion. The loser now
+	// updates no rows and is reported as a conflict.
 	UpdateAppointmentStatus(ctx context.Context, arg UpdateAppointmentStatusParams) (Appointment, error)
 	UpdateQueue(ctx context.Context, arg UpdateQueueParams) (Queue, error)
 	UpdateService(ctx context.Context, arg UpdateServiceParams) (Service, error)
@@ -90,6 +96,13 @@ type Querier interface {
 	// times are recorded by the same statement that moves the ticket and
 	// can't drift apart. called_by_user_id is only overwritten when a caller
 	// is supplied, so a later transition doesn't erase who called the ticket.
+	//
+	// from_status makes the write a compare-and-swap: the row only moves if
+	// it is still in the state the caller checked the lifecycle against. Two
+	// counters acting on the same ticket at once would otherwise both read
+	// 'called', both find their move legal, and both write — the second
+	// silently overwriting a finished ticket. The loser now updates no rows
+	// and reads as a conflict.
 	UpdateTicketStatus(ctx context.Context, arg UpdateTicketStatusParams) (QueueTicket, error)
 }
 

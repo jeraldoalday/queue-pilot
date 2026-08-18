@@ -5,6 +5,7 @@ package appointment
 import (
 	"context"
 	"errors"
+	"sync"
 	"testing"
 	"time"
 
@@ -152,5 +153,63 @@ func TestIntegrationSetStatusIsTenantScoped(t *testing.T) {
 	}
 	if still.Status != string(StatusCompleted) {
 		t.Fatalf("status = %q, want completed", still.Status)
+	}
+}
+
+// Two staff resolving one appointment at the same moment — the front desk
+// marking it completed while someone else records a no-show — must not
+// both take effect. The status write is conditional on the status the
+// caller read, so the one that arrives second updates no rows and is
+// reported as an invalid transition rather than quietly overwriting the
+// first.
+func TestIntegrationConcurrentSetStatusHasOneWinner(t *testing.T) {
+	f := newFixture(t)
+	ctx := context.Background()
+
+	// Each round books its own appointment an hour apart, so the
+	// no-overlap EXCLUDE constraint has nothing to say about them.
+	const rounds = 6
+	for round := 0; round < rounds; round++ {
+		appt, err := Book(ctx, f.pool, f.orgID, BookInput{
+			ServiceID:     f.serviceID,
+			StaffUserID:   f.staffID,
+			CustomerName:  "Race Customer",
+			CustomerEmail: "race@example.test",
+			StartsAt:      nextMonday().Add(time.Duration(9+round) * time.Hour),
+		})
+		if err != nil {
+			t.Fatalf("round %d: book: %v", round, err)
+		}
+		apptID := db.UUIDString(appt.ID)
+
+		targets := []Status{StatusCompleted, StatusNoShow}
+		results := make([]error, len(targets))
+
+		var wg sync.WaitGroup
+		start := make(chan struct{})
+		for i, to := range targets {
+			wg.Add(1)
+			go func(i int, to Status) {
+				defer wg.Done()
+				<-start
+				_, results[i] = SetStatus(ctx, f.pool, f.orgID, apptID, to)
+			}(i, to)
+		}
+		close(start)
+		wg.Wait()
+
+		won := 0
+		for i, err := range results {
+			switch {
+			case err == nil:
+				won++
+			case errors.Is(err, ErrInvalidTransition):
+			default:
+				t.Fatalf("round %d: transition to %s failed unexpectedly: %v", round, targets[i], err)
+			}
+		}
+		if won != 1 {
+			t.Fatalf("round %d: %d of %d concurrent transitions succeeded, want exactly 1", round, won, len(targets))
+		}
 	}
 }

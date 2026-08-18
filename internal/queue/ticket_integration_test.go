@@ -359,3 +359,108 @@ func TestIntegrationQueueSlugIsScopedToOrg(t *testing.T) {
 		t.Fatal("org B's slug lookup resolved to org A's queue")
 	}
 }
+
+// Two staff resolving the same called ticket at the same instant is the
+// ordinary case on a busy counter: one marks the customer served, the
+// other gives up on them as a no-show. Exactly one of those must take
+// effect. Before the status write was made conditional on the status the
+// caller read, both requests checked the lifecycle against the same
+// 'called' row, both found their move legal, and both wrote — so the
+// ticket's final state was decided by which HTTP request happened to
+// finish last, and a completed service could be overwritten as a no-show.
+func TestIntegrationConcurrentStatusChangeHasOneWinner(t *testing.T) {
+	f := newFixture(t)
+	ctx := context.Background()
+
+	// Each round is a fresh ticket sitting in 'called', which is the
+	// state with two legal and mutually exclusive next moves. Several
+	// rounds run because a race lost consistently by one side would
+	// otherwise be indistinguishable from correct behaviour.
+	const rounds = 8
+	for round := 0; round < rounds; round++ {
+		ticket := mustIssue(t, f, "Racer")
+		if _, err := SetStatus(ctx, f.pool, f.orgID, db.UUIDString(ticket.ID), StatusCalled, f.staffID); err != nil {
+			t.Fatalf("round %d: call ticket: %v", round, err)
+		}
+
+		targets := []Status{StatusServing, StatusNoShow}
+		results := make([]error, len(targets))
+
+		var wg sync.WaitGroup
+		start := make(chan struct{})
+		for i, to := range targets {
+			wg.Add(1)
+			go func(i int, to Status) {
+				defer wg.Done()
+				<-start // release both goroutines as close together as possible
+				_, results[i] = SetStatus(ctx, f.pool, f.orgID, db.UUIDString(ticket.ID), to, f.staffID)
+			}(i, to)
+		}
+		close(start)
+		wg.Wait()
+
+		won := 0
+		for i, err := range results {
+			switch {
+			case err == nil:
+				won++
+			case errors.Is(err, ErrInvalidTransition):
+				// The expected way to lose: by the time this request
+				// reached the database the move was no longer legal.
+			default:
+				t.Fatalf("round %d: transition to %s failed unexpectedly: %v", round, targets[i], err)
+			}
+		}
+		if won != 1 {
+			t.Fatalf("round %d: %d of %d concurrent transitions succeeded, want exactly 1", round, won, len(targets))
+		}
+
+		// Whichever won, the stored ticket must be in one of the two
+		// targets and never back in 'called' or in some blend of both.
+		final, err := sqlc.New(f.pool).GetTicket(ctx, sqlc.GetTicketParams{
+			ID:    ticket.ID,
+			OrgID: db.MustUUID(f.orgID),
+		})
+		if err != nil {
+			t.Fatalf("round %d: reread ticket: %v", round, err)
+		}
+		if Status(final.Status) != StatusServing && Status(final.Status) != StatusNoShow {
+			t.Fatalf("round %d: ticket settled in %q, want serving or no_show", round, final.Status)
+		}
+	}
+}
+
+// The same guarantee stated the other way round: a ticket that has
+// already reached a terminal state cannot be moved by a request that read
+// it earlier. This is what stops a slow "mark served" click from undoing
+// a cancellation the customer made from their phone in the meantime.
+func TestIntegrationStatusWriteRejectsStaleRead(t *testing.T) {
+	f := newFixture(t)
+	ctx := context.Background()
+
+	ticket := mustIssue(t, f, "Stale")
+	id := db.UUIDString(ticket.ID)
+
+	if _, err := SetStatus(ctx, f.pool, f.orgID, id, StatusCalled, f.staffID); err != nil {
+		t.Fatalf("call: %v", err)
+	}
+	if _, err := SetStatus(ctx, f.pool, f.orgID, id, StatusCancelled, f.staffID); err != nil {
+		t.Fatalf("cancel: %v", err)
+	}
+
+	// 'called' -> 'serving' was legal a moment ago and is not any more.
+	if _, err := SetStatus(ctx, f.pool, f.orgID, id, StatusServing, f.staffID); !errors.Is(err, ErrInvalidTransition) {
+		t.Fatalf("serving after cancel = %v, want ErrInvalidTransition", err)
+	}
+
+	final, err := sqlc.New(f.pool).GetTicket(ctx, sqlc.GetTicketParams{
+		ID:    ticket.ID,
+		OrgID: db.MustUUID(f.orgID),
+	})
+	if err != nil {
+		t.Fatalf("reread: %v", err)
+	}
+	if Status(final.Status) != StatusCancelled {
+		t.Fatalf("ticket status = %q, want cancelled", final.Status)
+	}
+}

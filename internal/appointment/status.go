@@ -69,11 +69,22 @@ func SetStatus(ctx context.Context, pool *pgxpool.Pool, orgID, appointmentID str
 		return sqlc.Appointment{}, ErrInvalidTransition
 	}
 
-	return q.UpdateAppointmentStatus(ctx, sqlc.UpdateAppointmentStatusParams{
-		ID:     db.MustUUID(appointmentID),
-		OrgID:  db.MustUUID(orgID),
-		Status: string(to),
+	// Conditional on the status this read saw, so two staff resolving the
+	// same appointment at once can't both succeed against one stale read
+	// — a cancellation would otherwise be able to overwrite a completion
+	// purely by finishing second.
+	updated, err := q.UpdateAppointmentStatus(ctx, sqlc.UpdateAppointmentStatusParams{
+		ID:         db.MustUUID(appointmentID),
+		OrgID:      db.MustUUID(orgID),
+		FromStatus: current.Status,
+		Status:     string(to),
 	})
+	if errors.Is(err, pgx.ErrNoRows) {
+		// The row was read successfully above, so no rows updated means
+		// the status moved out from under this request.
+		return sqlc.Appointment{}, ErrInvalidTransition
+	}
+	return updated, err
 }
 
 // ParseStatus converts a request-supplied status string into a Status,

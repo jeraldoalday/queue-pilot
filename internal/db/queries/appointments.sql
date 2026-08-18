@@ -48,7 +48,15 @@ WHERE org_id = sqlc.arg(org_id)
   AND ends_at > sqlc.arg(new_starts_at);
 
 -- name: UpdateAppointmentStatus :one
+-- from_status makes this a compare-and-swap, for the same reason
+-- UpdateTicketStatus is one: two staff resolving the same appointment at
+-- once would otherwise both read 'booked', both find their move legal,
+-- and both write, so whichever request finished second would decide the
+-- outcome — a cancellation could overwrite a completion. The loser now
+-- updates no rows and is reported as a conflict.
 UPDATE appointments
-SET status = $3, updated_at = now()
-WHERE id = $1 AND org_id = $2
+SET status = sqlc.arg(status), updated_at = now()
+WHERE id = sqlc.arg(id)
+  AND org_id = sqlc.arg(org_id)
+  AND status = sqlc.arg(from_status)
 RETURNING *;

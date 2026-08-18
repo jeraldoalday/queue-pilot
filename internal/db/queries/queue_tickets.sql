@@ -58,6 +58,13 @@ LIMIT 1;
 -- times are recorded by the same statement that moves the ticket and
 -- can't drift apart. called_by_user_id is only overwritten when a caller
 -- is supplied, so a later transition doesn't erase who called the ticket.
+--
+-- from_status makes the write a compare-and-swap: the row only moves if
+-- it is still in the state the caller checked the lifecycle against. Two
+-- counters acting on the same ticket at once would otherwise both read
+-- 'called', both find their move legal, and both write — the second
+-- silently overwriting a finished ticket. The loser now updates no rows
+-- and reads as a conflict.
 UPDATE queue_tickets
 SET status = sqlc.arg(status),
     called_by_user_id = COALESCE(sqlc.narg(called_by_user_id)::uuid, called_by_user_id),
@@ -67,7 +74,9 @@ SET status = sqlc.arg(status),
         WHEN sqlc.arg(status) IN ('done', 'no_show', 'cancelled') THEN now()
         ELSE completed_at
     END
-WHERE id = sqlc.arg(id) AND org_id = sqlc.arg(org_id)
+WHERE id = sqlc.arg(id)
+  AND org_id = sqlc.arg(org_id)
+  AND status = sqlc.arg(from_status)
 RETURNING *;
 
 -- name: CountWaitingAhead :one
