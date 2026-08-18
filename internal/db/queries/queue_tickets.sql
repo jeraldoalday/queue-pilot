@@ -91,14 +91,14 @@ FROM queue_tickets
 WHERE queue_id = sqlc.arg(queue_id) AND ticket_date = sqlc.arg(ticket_date);
 
 -- name: AverageServiceSeconds :one
--- Mean hands-on service time for recently completed tickets, used to
--- estimate waits. Only 'done' tickets count: a no-show or cancellation
+-- Mean hands-on service time for recently completed tickets, plus how
+-- many tickets that mean was drawn from — a queue's first few customers
+-- would otherwise produce a confident-looking estimate from one sample. Only 'done' tickets count: a no-show or cancellation
 -- says nothing about how long serving someone takes. The 30-day window
 -- keeps the estimate responsive to how the business runs now.
-SELECT COALESCE(
-    avg(EXTRACT(EPOCH FROM (completed_at - serving_at))),
-    0
-)::float8 AS avg_seconds
+SELECT
+    COALESCE(avg(EXTRACT(EPOCH FROM (completed_at - serving_at))), 0)::float8 AS avg_seconds,
+    count(*) AS sample_count
 FROM queue_tickets
 WHERE queue_id = sqlc.arg(queue_id)
   AND status = 'done'

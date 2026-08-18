@@ -12,11 +12,12 @@ import (
 
 type Querier interface {
 	AssignStaffService(ctx context.Context, arg AssignStaffServiceParams) error
-	// Mean hands-on service time for recently completed tickets, used to
-	// estimate waits. Only 'done' tickets count: a no-show or cancellation
+	// Mean hands-on service time for recently completed tickets, plus how
+	// many tickets that mean was drawn from — a queue's first few customers
+	// would otherwise produce a confident-looking estimate from one sample. Only 'done' tickets count: a no-show or cancellation
 	// says nothing about how long serving someone takes. The 30-day window
 	// keeps the estimate responsive to how the business runs now.
-	AverageServiceSeconds(ctx context.Context, queueID pgtype.UUID) (float64, error)
+	AverageServiceSeconds(ctx context.Context, queueID pgtype.UUID) (AverageServiceSecondsRow, error)
 	CountOrganizations(ctx context.Context) (int64, error)
 	// Half-open overlap test: an existing booking conflicts only if it starts
 	// before the new one ends AND ends after the new one starts, so bookings

@@ -12,10 +12,9 @@ import (
 )
 
 const averageServiceSeconds = `-- name: AverageServiceSeconds :one
-SELECT COALESCE(
-    avg(EXTRACT(EPOCH FROM (completed_at - serving_at))),
-    0
-)::float8 AS avg_seconds
+SELECT
+    COALESCE(avg(EXTRACT(EPOCH FROM (completed_at - serving_at))), 0)::float8 AS avg_seconds,
+    count(*) AS sample_count
 FROM queue_tickets
 WHERE queue_id = $1
   AND status = 'done'
@@ -24,15 +23,21 @@ WHERE queue_id = $1
   AND completed_at > now() - interval '30 days'
 `
 
-// Mean hands-on service time for recently completed tickets, used to
-// estimate waits. Only 'done' tickets count: a no-show or cancellation
+type AverageServiceSecondsRow struct {
+	AvgSeconds  float64 `json:"avg_seconds"`
+	SampleCount int64   `json:"sample_count"`
+}
+
+// Mean hands-on service time for recently completed tickets, plus how
+// many tickets that mean was drawn from — a queue's first few customers
+// would otherwise produce a confident-looking estimate from one sample. Only 'done' tickets count: a no-show or cancellation
 // says nothing about how long serving someone takes. The 30-day window
 // keeps the estimate responsive to how the business runs now.
-func (q *Queries) AverageServiceSeconds(ctx context.Context, queueID pgtype.UUID) (float64, error) {
+func (q *Queries) AverageServiceSeconds(ctx context.Context, queueID pgtype.UUID) (AverageServiceSecondsRow, error) {
 	row := q.db.QueryRow(ctx, averageServiceSeconds, queueID)
-	var avg_seconds float64
-	err := row.Scan(&avg_seconds)
-	return avg_seconds, err
+	var i AverageServiceSecondsRow
+	err := row.Scan(&i.AvgSeconds, &i.SampleCount)
+	return i, err
 }
 
 const countWaitingAhead = `-- name: CountWaitingAhead :one
