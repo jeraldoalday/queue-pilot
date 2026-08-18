@@ -103,6 +103,18 @@ func (s *Server) Routes() http.Handler {
 	mux.Handle("POST /app/queues/{id}/tickets", requireAuth(auth.RequireCSRF(http.HandlerFunc(s.queue.PostTicket))))
 	mux.Handle("POST /app/tickets/{id}/status", requireAuth(auth.RequireCSRF(http.HandlerFunc(s.queue.PostTicketStatus))))
 
+	// Public queue pages. These carry no session: the tenant comes from
+	// the {orgSlug} path segment, and every lookup below it is scoped by
+	// the org ID that resolves to — the same rule the authenticated side
+	// follows, with a different source for the tenant.
+	mux.HandleFunc("GET /q/{orgSlug}/{queueSlug}", s.queue.GetPublicBoard)
+	mux.HandleFunc("GET /q/{orgSlug}/{queueSlug}/board", s.queue.GetPublicBoardPartial)
+	mux.HandleFunc("GET /q/{orgSlug}/{queueSlug}/display", s.queue.GetPublicDisplay)
+	mux.HandleFunc("GET /q/{orgSlug}/{queueSlug}/display/board", s.queue.GetPublicDisplayPartial)
+	mux.HandleFunc("POST /q/{orgSlug}/{queueSlug}/tickets", s.queue.PostPublicTicket)
+	mux.HandleFunc("GET /q/{orgSlug}/{queueSlug}/t/{ticketID}", s.queue.GetPublicTicket)
+	mux.HandleFunc("GET /q/{orgSlug}/{queueSlug}/t/{ticketID}/status", s.queue.GetPublicTicketPartial)
+
 	return mux
 }
 

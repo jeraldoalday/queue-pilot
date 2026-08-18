@@ -195,3 +195,26 @@ func TestFormatWait(t *testing.T) {
 		})
 	}
 }
+
+// The join-form wording addresses someone who does not hold a ticket yet,
+// so a zero wait must read as "nothing to wait behind" rather than as the
+// ticket-holder's "you're next".
+func TestFormatJoinWait(t *testing.T) {
+	tests := []struct {
+		d    time.Duration
+		want string
+	}{
+		{0, "No wait right now"},
+		{-time.Minute, "No wait right now"},
+		{2 * time.Minute, "Less than 5 minutes"},
+		{20 * time.Minute, "About 20 minutes"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.want, func(t *testing.T) {
+			if got := FormatJoinWait(tt.d); got != tt.want {
+				t.Fatalf("FormatJoinWait(%v) = %q, want %q", tt.d, got, tt.want)
+			}
+		})
+	}
+}

@@ -1,0 +1,224 @@
+package queue
+
+import (
+	"strconv"
+
+	"github.com/jeraldoalday/queuepilot/internal/db"
+	"github.com/jeraldoalday/queuepilot/internal/db/sqlc"
+	"github.com/jeraldoalday/queuepilot/internal/web/components"
+)
+
+// publicRefreshInterval is how often a customer-facing page re-reads the
+// board. It is slower than the staff console's: a customer watching their
+// position does not need five-second precision, and these pages are the
+// ones a whole waiting room may have open at once.
+const publicRefreshInterval = "every 15s"
+
+// displayRefreshInterval is for the waiting-room screen. It is the one
+// page where a stale number is immediately visible to everyone in the
+// room, so it refreshes as often as the staff console.
+const displayRefreshInterval = "every 5s"
+
+func boardPartialURL(orgSlug, queueSlug string) string {
+	return "/q/" + orgSlug + "/" + queueSlug + "/board"
+}
+
+func displayPartialURL(orgSlug, queueSlug string) string {
+	return "/q/" + orgSlug + "/" + queueSlug + "/display/board"
+}
+
+func ticketPartialURL(orgSlug, queueSlug, ticketID string) string {
+	return ticketURL(orgSlug, queueSlug, ticketID) + "/status"
+}
+
+templ PublicBoardPage(o sqlc.Organization, board Board, errMsg string) {
+	@components.Layout(board.Queue.Name + " · " + o.Name) {
+		<main class="mx-auto max-w-xl px-6 py-12">
+			<div
+				id="public-board"
+				hx-get={ boardPartialURL(o.Slug, board.Queue.Slug) }
+				hx-trigger={ publicRefreshInterval }
+				hx-swap="innerHTML"
+			>
+				@PublicBoardBody(o, board, errMsg)
+			</div>
+		</main>
+	}
+}
+
+templ PublicBoardBody(o sqlc.Organization, board Board, errMsg string) {
+	<div>
+		<p class="text-sm text-slate-500">{ o.Name }</p>
+		<h1 class="text-2xl font-semibold tracking-tight">{ board.Queue.Name }</h1>
+
+		<div class="mt-6 rounded-lg border border-slate-200 bg-white p-6 text-center">
+			<p class="text-xs uppercase tracking-wide text-slate-500">Now serving</p>
+			if ns, ok := board.NowServing(); ok {
+				<p class="mt-1 text-5xl font-semibold tabular-nums">{ ticketNumber(ns.Number) }</p>
+			} else {
+				<p class="mt-1 text-5xl font-semibold text-slate-300">—</p>
+			}
+			<p class="mt-3 text-sm text-slate-600">
+				{ strconv.Itoa(board.Stats.Waiting) } waiting
+			</p>
+		</div>
+
+		if board.Queue.Active {
+			@publicJoinForm(o, board, errMsg)
+		} else {
+			<p class="mt-6 rounded-md bg-slate-100 px-4 py-3 text-sm text-slate-700">
+				This line isn't taking new walk-ins right now.
+			</p>
+		}
+	</div>
+}
+
+// publicJoinForm posts a plain HTML form rather than an htmx request: the
+// handler answers with a redirect to the customer's own ticket page, so a
+// refresh re-reads that ticket instead of taking a second number.
+templ publicJoinForm(o sqlc.Organization, board Board, errMsg string) {
+	<form method="POST" action={ templ.SafeURL("/q/" + o.Slug + "/" + board.Queue.Slug + "/tickets") } class="mt-6 rounded-lg border border-slate-200 bg-white p-6">
+		<h2 class="text-base font-medium">Join the line</h2>
+		if errMsg != "" {
+			<p class="mt-3 rounded-md bg-red-50 px-3 py-2 text-sm text-red-700">{ errMsg }</p>
+		}
+		<div class="mt-4">
+			<label for="customer_name" class="block text-xs font-medium text-slate-700">Your name</label>
+			<input id="customer_name" name="customer_name" type="text" required maxlength="60" autocomplete="name" class="mt-1 block w-full rounded-md border border-slate-300 px-3 py-2 text-sm"/>
+		</div>
+		<div class="mt-3">
+			<label for="customer_phone" class="block text-xs font-medium text-slate-700">Phone (optional)</label>
+			<input id="customer_phone" name="customer_phone" type="tel" maxlength="32" autocomplete="tel" class="mt-1 block w-full rounded-md border border-slate-300 px-3 py-2 text-sm"/>
+		</div>
+		<button type="submit" class="mt-4 w-full rounded-md bg-slate-900 px-4 py-2.5 text-sm font-medium text-white hover:bg-slate-700">
+			Get a ticket
+		</button>
+		<p class="mt-3 text-xs text-slate-500">
+			Estimated wait if you join now:
+			{ FormatJoinWait(Estimate(board.Stats.Waiting, board.ServiceTime, board.ActiveServers())) }
+		</p>
+	</form>
+}
+
+// PublicDisplayPage is the waiting-room screen. It shows numbers only —
+// never customer names — because it is read by everyone in the room, not
+// just the person it refers to. The customer's own page is where their
+// name appears.
+templ PublicDisplayPage(o sqlc.Organization, board Board) {
+	@components.Layout(board.Queue.Name + " · " + o.Name) {
+		<main class="min-h-screen bg-slate-900 px-8 py-10 text-white">
+			<div
+				id="public-display"
+				hx-get={ displayPartialURL(o.Slug, board.Queue.Slug) }
+				hx-trigger={ displayRefreshInterval }
+				hx-swap="innerHTML"
+			>
+				@PublicDisplayBody(o, board)
+			</div>
+		</main>
+	}
+}
+
+templ PublicDisplayBody(o sqlc.Organization, board Board) {
+	<div>
+		<p class="text-lg text-slate-400">{ o.Name } · { board.Queue.Name }</p>
+
+		<div class="mt-10 text-center">
+			<p class="text-xl uppercase tracking-widest text-slate-400">Now serving</p>
+			if ns, ok := board.NowServing(); ok {
+				<p class="mt-4 text-[10rem] font-bold leading-none tabular-nums">{ ticketNumber(ns.Number) }</p>
+			} else {
+				<p class="mt-4 text-[10rem] font-bold leading-none tabular-nums text-slate-700">—</p>
+			}
+		</div>
+
+		if len(board.InProgress) > 1 {
+			<div class="mt-12">
+				<p class="text-center text-lg uppercase tracking-widest text-slate-400">Also at a counter</p>
+				<p class="mt-3 text-center text-4xl font-semibold tabular-nums">
+					for i, t := range board.InProgress {
+						if i > 0 {
+							<span class="mx-3">{ ticketNumber(t.Number) }</span>
+						}
+					}
+				</p>
+			</div>
+		}
+
+		<div class="mt-12 text-center text-2xl text-slate-300">
+			{ strconv.Itoa(board.Stats.Waiting) } waiting
+		</div>
+	</div>
+}
+
+templ PublicTicketPage(o sqlc.Organization, board Board, ticket sqlc.QueueTicket) {
+	@components.Layout("Ticket " + ticketNumber(ticket.Number)) {
+		<main class="mx-auto max-w-xl px-6 py-12">
+			<div
+				id="public-ticket"
+				hx-get={ ticketPartialURL(o.Slug, board.Queue.Slug, db.UUIDString(ticket.ID)) }
+				hx-trigger={ publicRefreshInterval }
+				hx-swap="innerHTML"
+			>
+				@PublicTicketBody(o, board, ticket)
+			</div>
+		</main>
+	}
+}
+
+templ PublicTicketBody(o sqlc.Organization, board Board, ticket sqlc.QueueTicket) {
+	<div>
+		<p class="text-sm text-slate-500">{ o.Name } · { board.Queue.Name }</p>
+
+		<div class="mt-6 rounded-lg border border-slate-200 bg-white p-8 text-center">
+			<p class="text-xs uppercase tracking-wide text-slate-500">Your ticket</p>
+			<p class="mt-1 text-6xl font-semibold tabular-nums">{ ticketNumber(ticket.Number) }</p>
+			<p class="mt-2 text-sm text-slate-600">{ ticket.CustomerName }</p>
+
+			<div class="mt-6 border-t border-slate-100 pt-6">
+				switch Status(ticket.Status) {
+					case StatusWaiting:
+						@ticketWaitingDetail(board, ticket)
+					case StatusCalled:
+						<p class="text-lg font-medium text-amber-700">You're being called — please come to the counter.</p>
+					case StatusServing:
+						<p class="text-lg font-medium text-green-700">You're at the counter now.</p>
+					case StatusDone:
+						<p class="text-lg font-medium text-slate-600">All done. Thanks for visiting.</p>
+					case StatusNoShow:
+						<p class="text-lg font-medium text-slate-600">
+							This number was called and missed. Please ask a member of staff.
+						</p>
+					default:
+						<p class="text-lg font-medium text-slate-600">This ticket was cancelled.</p>
+				}
+			</div>
+		</div>
+
+		<p class="mt-4 text-center text-xs text-slate-500">
+			This page updates on its own — you can leave it open.
+		</p>
+		<p class="mt-2 text-center text-xs text-slate-500">
+			Now serving
+			if ns, ok := board.NowServing(); ok {
+				{ ticketNumber(ns.Number) }
+			} else {
+				— nothing yet
+			}
+		</p>
+	</div>
+}
+
+templ ticketWaitingDetail(board Board, ticket sqlc.QueueTicket) {
+	<p class="text-sm uppercase tracking-wide text-slate-500">Your place in line</p>
+	<p class="mt-1 text-3xl font-semibold tabular-nums">
+		{ strconv.Itoa(Position(board.AheadOf(ticket.Number))) }
+	</p>
+	<p class="mt-3 text-lg font-medium">{ FormatWait(board.EstimateFor(ticket.Number)) }</p>
+	if !board.ServiceTime.Measured() {
+		<p class="mt-2 text-xs text-slate-500">
+			This is a rough guide: this queue hasn't served enough people yet
+			to measure how long it takes.
+		</p>
+	}
+}

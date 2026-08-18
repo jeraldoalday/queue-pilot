@@ -93,6 +93,18 @@ func FormatWait(d time.Duration) string {
 	}
 }
 
+// FormatJoinWait renders an estimate for someone deciding whether to join
+// the line at all. It is worded differently from FormatWait on purpose:
+// that one addresses a customer who already holds a ticket, so a zero
+// there means "you're next", while a zero here means there is nobody to
+// wait behind.
+func FormatJoinWait(d time.Duration) string {
+	if d <= 0 {
+		return "No wait right now"
+	}
+	return FormatWait(d)
+}
+
 // roundUp rounds d up to the next multiple of to. An exact multiple is
 // left alone.
 func roundUp(d, to time.Duration) time.Duration {
