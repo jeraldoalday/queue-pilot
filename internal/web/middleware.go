@@ -37,12 +37,17 @@ func RecoverPanic(log *slog.Logger) func(http.Handler) http.Handler {
 				// the client has a truncated response either way.
 				if rw.wrote {
 					log.Error("panic after response started",
+						"request_id", RequestIDFrom(r.Context()),
 						"error", rec, "method", r.Method, "path", r.URL.Path,
 						"stack", string(debug.Stack()))
 					panic(rec)
 				}
 
+				// The request ID ties this stack to the access log line
+				// for the same request, which is the whole reason a user
+				// can report "it broke" and have it be findable.
 				log.Error("panic recovered",
+					"request_id", RequestIDFrom(r.Context()),
 					"error", rec, "method", r.Method, "path", r.URL.Path,
 					"stack", string(debug.Stack()))
 				http.Error(w, "internal error", http.StatusInternalServerError)
