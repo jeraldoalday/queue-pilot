@@ -7,6 +7,7 @@ import (
 	"html"
 	"io"
 	"net/http"
+	"net/http/cookiejar"
 	"net/http/httptest"
 	"net/url"
 	"os"
@@ -41,6 +42,9 @@ type testTenant struct {
 	queueSlug string
 	orgID     string
 	queueID   string
+	// adminEmail is the account newTenant created, so a test can sign in
+	// as an admin without re-deriving it from the signup call.
+	adminEmail string
 }
 
 func newTestServer(t *testing.T) *httptest.Server {
@@ -79,10 +83,11 @@ func newTenant(t *testing.T, srv *httptest.Server, name string) testTenant {
 
 	ctx := context.Background()
 	sessions := session.NewStore(pool, clock.Real{})
+	adminEmail := "admin-" + id.New() + "@example.test"
 	ident, err := auth.Signup(ctx, pool, sessions, auth.SignupInput{
 		OrgName:    name + " " + id.New(),
 		AdminName:  "Test Admin",
-		AdminEmail: "admin-" + id.New() + "@example.test",
+		AdminEmail: adminEmail,
 		Password:   "password123",
 	})
 	if err != nil {
@@ -100,12 +105,13 @@ func newTenant(t *testing.T, srv *httptest.Server, name string) testTenant {
 	}
 
 	return testTenant{
-		server:    srv,
-		pool:      pool,
-		orgSlug:   orgRow.Slug,
-		queueSlug: q.Slug,
-		orgID:     ident.OrgID,
-		queueID:   db.UUIDString(q.ID),
+		server:     srv,
+		pool:       pool,
+		orgSlug:    orgRow.Slug,
+		queueSlug:  q.Slug,
+		orgID:      ident.OrgID,
+		queueID:    db.UUIDString(q.ID),
+		adminEmail: adminEmail,
 	}
 }
 
@@ -308,8 +314,11 @@ func TestIntegrationAppRoutesRequireAuth(t *testing.T) {
 		"/app/queues",
 		"/app/queues/00000000-0000-0000-0000-000000000000/console",
 		"/app/queues/00000000-0000-0000-0000-000000000000/board",
+		"/app/queues/00000000-0000-0000-0000-000000000000/report",
+		"/app/queues/00000000-0000-0000-0000-000000000000/export.csv",
 		"/app/schedule",
 		"/app/services",
+		"/app/settings",
 		"/app/staff",
 	}
 
@@ -437,4 +446,140 @@ func TestIntegrationCancelIsIdempotentForTheCustomer(t *testing.T) {
 	if !strings.Contains(body, "cancelled") {
 		t.Error("the ticket is not cancelled after two cancel requests")
 	}
+}
+
+// A staff member works the counter, so they reach the console and the day
+// report; they are not an admin, so they must not reach the settings that
+// decide when the service day rolls over, nor download a file of customer
+// names and phone numbers.
+func TestIntegrationStaffRoleReachesOperationsButNotConfiguration(t *testing.T) {
+	srv := newTestServer(t)
+	tt := newTenant(t, srv, "Role Split Org")
+
+	ctx := context.Background()
+	staff, err := auth.CreateStaffUser(ctx, tt.pool, tt.orgID, auth.CreateStaffInput{
+		Name:     "Counter Staff",
+		Email:    "staff-" + id.New() + "@example.test",
+		Password: "password123",
+	})
+	if err != nil {
+		t.Fatalf("create staff: %v", err)
+	}
+
+	client := signIn(t, srv, staff.Email, "password123")
+
+	allowed := []string{
+		"/app",
+		"/app/queues/" + tt.queueID + "/console",
+		"/app/queues/" + tt.queueID + "/report",
+		"/app/schedule",
+	}
+	for _, path := range allowed {
+		t.Run("allowed "+path, func(t *testing.T) {
+			if code := statusOf(t, client, srv, path); code != http.StatusOK {
+				t.Errorf("staff GET %s = %d, want 200", path, code)
+			}
+		})
+	}
+
+	forbidden := []string{
+		"/app/settings",
+		"/app/queues",
+		"/app/services",
+		"/app/staff",
+		"/app/queues/" + tt.queueID + "/export.csv",
+	}
+	for _, path := range forbidden {
+		t.Run("forbidden "+path, func(t *testing.T) {
+			if code := statusOf(t, client, srv, path); code != http.StatusForbidden {
+				t.Errorf("staff GET %s = %d, want 403", path, code)
+			}
+		})
+	}
+}
+
+// The export carries personal data, so the check that keeps it from staff
+// is worth stating twice: once as a route, and once as the download link
+// the report page renders. A button that answers 403 is a worse answer
+// than no button.
+func TestIntegrationReportOffersTheExportOnlyToAdmins(t *testing.T) {
+	srv := newTestServer(t)
+	tt := newTenant(t, srv, "Export Link Org")
+
+	ctx := context.Background()
+	staff, err := auth.CreateStaffUser(ctx, tt.pool, tt.orgID, auth.CreateStaffInput{
+		Name:     "Counter Staff",
+		Email:    "staff-" + id.New() + "@example.test",
+		Password: "password123",
+	})
+	if err != nil {
+		t.Fatalf("create staff: %v", err)
+	}
+
+	staffBody := bodyOf(t, signIn(t, srv, staff.Email, "password123"), srv, "/app/queues/"+tt.queueID+"/report")
+	if strings.Contains(staffBody, "export.csv") {
+		t.Error("the report page offers staff a download the export route would refuse")
+	}
+
+	adminBody := bodyOf(t, signIn(t, srv, tt.adminEmail, "password123"), srv, "/app/queues/"+tt.queueID+"/report")
+	if !strings.Contains(adminBody, "export.csv") {
+		t.Error("the report page does not offer an admin the download")
+	}
+}
+
+// signIn logs a user in and returns a client holding their session cookie.
+func signIn(t *testing.T, srv *httptest.Server, email, password string) *http.Client {
+	t.Helper()
+
+	jar, err := cookiejar.New(nil)
+	if err != nil {
+		t.Fatalf("cookie jar: %v", err)
+	}
+	client := &http.Client{Jar: jar, Timeout: 10 * time.Second}
+
+	resp, err := client.PostForm(srv.URL+"/login", url.Values{
+		"email":    {email},
+		"password": {password},
+	})
+	if err != nil {
+		t.Fatalf("login as %s: %v", email, err)
+	}
+	defer resp.Body.Close()
+	io.Copy(io.Discard, resp.Body)
+
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("login as %s = %d, want 200", email, resp.StatusCode)
+	}
+	return client
+}
+
+func statusOf(t *testing.T, client *http.Client, srv *httptest.Server, path string) int {
+	t.Helper()
+
+	resp, err := client.Get(srv.URL + path)
+	if err != nil {
+		t.Fatalf("GET %s: %v", path, err)
+	}
+	defer resp.Body.Close()
+	io.Copy(io.Discard, resp.Body)
+	return resp.StatusCode
+}
+
+func bodyOf(t *testing.T, client *http.Client, srv *httptest.Server, path string) string {
+	t.Helper()
+
+	resp, err := client.Get(srv.URL + path)
+	if err != nil {
+		t.Fatalf("GET %s: %v", path, err)
+	}
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		t.Fatalf("read %s: %v", path, err)
+	}
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("GET %s = %d, want 200", path, resp.StatusCode)
+	}
+	return string(body)
 }
