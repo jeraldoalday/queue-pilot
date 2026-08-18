@@ -66,8 +66,7 @@ const (
 func (s *Server) Routes() http.Handler {
 	mux := http.NewServeMux()
 
-	fileServer := http.FileServer(http.Dir("internal/web/static"))
-	mux.Handle("GET /static/", http.StripPrefix("/static/", fileServer))
+	mux.Handle("GET /static/", staticHandler())
 
 	mux.HandleFunc("GET /healthz", s.handleHealthz)
 	mux.HandleFunc("GET /{$}", s.handleHome)
