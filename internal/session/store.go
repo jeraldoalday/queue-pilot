@@ -131,3 +131,11 @@ func (s *Store) Delete(ctx context.Context, token string) error {
 func (s *Store) Touch(ctx context.Context, token string) error {
 	return s.q.TouchSession(ctx, token)
 }
+
+// DeleteExpired removes every session whose expiry has passed, returning
+// how many rows went. It is exposed on the Store rather than called
+// directly so the sweeper works against the same query set as everything
+// else, including inside a transaction in tests.
+func (s *Store) DeleteExpired(ctx context.Context) (int64, error) {
+	return s.q.DeleteExpiredSessions(ctx)
+}

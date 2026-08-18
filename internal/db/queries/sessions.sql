@@ -23,3 +23,9 @@ SELECT
 FROM sessions s
 JOIN users u ON u.id = s.user_id
 WHERE s.token = $1;
+
+-- name: DeleteExpiredSessions :execrows
+-- Removes sessions whose expiry has passed. Nothing else deletes them:
+-- Get treats an expired row as absent, so without this the table only ever
+-- grows, one row per login, forever.
+DELETE FROM sessions WHERE expires_at < now();

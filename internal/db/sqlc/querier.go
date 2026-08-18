@@ -37,6 +37,10 @@ type Querier interface {
 	CreateTicket(ctx context.Context, arg CreateTicketParams) (QueueTicket, error)
 	CreateUser(ctx context.Context, arg CreateUserParams) (User, error)
 	DeleteAvailability(ctx context.Context, arg DeleteAvailabilityParams) error
+	// Removes sessions whose expiry has passed. Nothing else deletes them:
+	// Get treats an expired row as absent, so without this the table only ever
+	// grows, one row per login, forever.
+	DeleteExpiredSessions(ctx context.Context) (int64, error)
 	DeleteQueue(ctx context.Context, arg DeleteQueueParams) error
 	DeleteService(ctx context.Context, arg DeleteServiceParams) error
 	DeleteSession(ctx context.Context, token string) error

@@ -14,7 +14,9 @@ import (
 
 	"github.com/jeraldoalday/queuepilot/internal/config"
 	"github.com/jeraldoalday/queuepilot/internal/db"
+	"github.com/jeraldoalday/queuepilot/internal/platform/clock"
 	"github.com/jeraldoalday/queuepilot/internal/platform/logger"
+	"github.com/jeraldoalday/queuepilot/internal/session"
 	"github.com/jeraldoalday/queuepilot/internal/web"
 )
 
@@ -78,6 +80,14 @@ func run() error {
 		return err
 	}
 	defer pool.Close()
+
+	// Expired sessions are ignored at lookup, so nothing about
+	// correctness depends on removing their rows — but nothing removed
+	// them either, and a long-lived instance accumulates one dead row per
+	// login forever. The sweeper runs for the life of the process and
+	// stops with it.
+	sessions := session.NewStore(pool, clock.Real{})
+	go session.NewSweeper(sessions, log).Run(ctx)
 
 	srv := &http.Server{
 		Addr:              ":" + cfg.Port,
