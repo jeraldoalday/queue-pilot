@@ -45,6 +45,9 @@ func dispatch(args []string) error {
 		return run()
 	case "seed":
 		return seed(args[1:])
+	case "version":
+		fmt.Println(web.Build().Short())
+		return nil
 	case "help", "-h", "--help":
 		usage(os.Stdout)
 		return nil
@@ -60,6 +63,7 @@ func usage(w io.Writer) {
 usage:
   queuepilot [serve]   start the HTTP server (default)
   queuepilot seed      populate the database with a demo organization
+  queuepilot version   print the commit this binary was built from
   queuepilot help      show this message
 `)
 }
@@ -100,7 +104,10 @@ func run() error {
 
 	errCh := make(chan error, 1)
 	go func() {
-		log.Info("server starting", "addr", srv.Addr, "env", cfg.Env)
+		// The build goes in the startup line so the first thing in an
+		// instance's log identifies the code it is running — which is the
+		// question anyone reading that log later will have.
+		log.Info("server starting", "addr", srv.Addr, "env", cfg.Env, "build", web.Build().Short())
 		if err := srv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
 			errCh <- err
 			return
