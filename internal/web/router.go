@@ -116,6 +116,9 @@ func (s *Server) Routes() http.Handler {
 	// The report is staff-visible for the same reason the console is: the
 	// people working the counter are the ones who act on when the rush was.
 	mux.Handle("GET /app/queues/{id}/report", requireAuth(http.HandlerFunc(s.queue.GetReport)))
+	// The export is admin-only: its rows carry customer names and phone
+	// numbers, and a downloaded file outlives the reason it was pulled.
+	mux.Handle("GET /app/queues/{id}/export.csv", requireAuth(requireAdmin(http.HandlerFunc(s.queue.GetExport))))
 	mux.Handle("GET /app/queues/{id}/board", requireAuth(http.HandlerFunc(s.queue.GetConsoleBoard)))
 	mux.Handle("POST /app/queues/{id}/call-next", requireAuth(auth.RequireCSRF(http.HandlerFunc(s.queue.PostCallNext))))
 	mux.Handle("POST /app/queues/{id}/tickets", requireAuth(auth.RequireCSRF(http.HandlerFunc(s.queue.PostTicket))))

@@ -23,7 +23,15 @@ func consoleURL(queueID string) string {
 	return "/app/queues/" + queueID + "/console"
 }
 
-templ ReportPage(r Report, prevDate, nextDate, todayDate string) {
+// exportURL always names its day explicitly, even when that day is today.
+// A download link that means "whatever today is" produces a differently
+// shaped file depending on when it is clicked, and the whole point of the
+// file is that it is a record of one particular day.
+func exportURL(queueID, date string) string {
+	return "/app/queues/" + queueID + "/export.csv?date=" + date
+}
+
+templ ReportPage(r Report, prevDate, nextDate, todayDate string, isAdmin bool) {
 	@components.Layout(r.Queue.Name + " · Report") {
 		<main class="mx-auto max-w-5xl px-6 py-10">
 			<p class="mb-4 space-x-4">
@@ -44,6 +52,17 @@ templ ReportPage(r Report, prevDate, nextDate, todayDate string) {
 				@reportTotals(r)
 				@reportTimings(r)
 				@reportHistogram(r)
+			}
+
+			if isAdmin {
+				<p class="mt-8">
+					<a
+						href={ templ.SafeURL(exportURL(db.UUIDString(r.Queue.ID), r.Day.Format(dateLayout))) }
+						class="rounded-md border border-slate-300 px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50"
+					>
+						Download this day as CSV
+					</a>
+				</p>
 			}
 
 			<p class="mt-8 text-xs text-slate-500">
