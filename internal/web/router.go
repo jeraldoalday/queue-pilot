@@ -152,17 +152,19 @@ func (s *Server) Routes() http.Handler {
 	// do either quickly is a script able to disrupt a business's morning.
 	mux.Handle("POST /q/{orgSlug}/{queueSlug}/t/{ticketID}/cancel", limitPublic(http.HandlerFunc(s.queue.PostPublicTicketCancel)))
 
-	// The order of these three is deliberate, read outermost first.
+	// The order of these four is deliberate, read outermost first.
 	//
 	// RequestID is first so every line any of the others writes carries
 	// the same identifier — including the access log's, and including a
 	// panic's. AccessLog sits inside it so it can read that ID, and
 	// outside RecoverPanic so a panicking request still produces a line
 	// saying it returned 500 rather than vanishing from the log entirely.
-	// RecoverPanic is innermost of the three and still outside the mux,
-	// so a panic anywhere in a handler becomes a logged 500 rather than a
-	// dropped connection.
-	return RequestID(AccessLog(s.log)(RecoverPanic(s.log)(mux)))
+	// RecoverPanic sits outside the mux, so a panic anywhere in a handler
+	// becomes a logged 500 rather than a dropped connection.
+	// SecurityHeaders is innermost of the four so its headers are set on
+	// the response a handler is about to write, and so a 500 produced by
+	// RecoverPanic still carries them — an error page is a page.
+	return RequestID(AccessLog(s.log)(RecoverPanic(s.log)(SecurityHeaders(s.cfg.SessionCookieSecure)(mux))))
 }
 
 // handleHealthz reports readiness, including DB connectivity, so an
