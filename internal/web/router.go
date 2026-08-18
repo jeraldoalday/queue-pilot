@@ -13,6 +13,7 @@ import (
 	"github.com/jeraldoalday/queuepilot/internal/config"
 	sqlcgen "github.com/jeraldoalday/queuepilot/internal/db/sqlc"
 	"github.com/jeraldoalday/queuepilot/internal/platform/clock"
+	"github.com/jeraldoalday/queuepilot/internal/queue"
 	"github.com/jeraldoalday/queuepilot/internal/session"
 	"github.com/jeraldoalday/queuepilot/internal/tenant"
 )
@@ -27,6 +28,7 @@ type Server struct {
 	catalog      *catalog.Handlers
 	availability *availability.Handlers
 	appointment  *appointment.Handlers
+	queue        *queue.Handlers
 }
 
 func NewServer(cfg config.Config, log *slog.Logger, pool *pgxpool.Pool) *Server {
@@ -41,6 +43,7 @@ func NewServer(cfg config.Config, log *slog.Logger, pool *pgxpool.Pool) *Server 
 		catalog:      catalog.NewHandlers(pool, log),
 		availability: availability.NewHandlers(pool, log),
 		appointment:  appointment.NewHandlers(pool, log),
+		queue:        queue.NewHandlers(pool, log),
 	}
 }
 
@@ -85,6 +88,20 @@ func (s *Server) Routes() http.Handler {
 	mux.Handle("POST /app/appointments/slots", requireAuth(auth.RequireCSRF(http.HandlerFunc(s.appointment.PostSlots))))
 	mux.Handle("POST /app/appointments", requireAuth(auth.RequireCSRF(http.HandlerFunc(s.appointment.PostAppointment))))
 	mux.Handle("POST /app/appointments/{id}/status", requireAuth(auth.RequireCSRF(http.HandlerFunc(s.appointment.PostStatus))))
+
+	// Creating and closing queues is org configuration, so it is
+	// admin-only; working a queue is the job, so the console and every
+	// ticket action are open to staff too.
+	mux.Handle("GET /app/queues", requireAuth(requireAdmin(http.HandlerFunc(s.queue.GetQueues))))
+	mux.Handle("POST /app/queues", requireAuth(requireAdmin(auth.RequireCSRF(http.HandlerFunc(s.queue.PostQueues)))))
+	mux.Handle("POST /app/queues/{id}", requireAuth(requireAdmin(auth.RequireCSRF(http.HandlerFunc(s.queue.PostQueue)))))
+	mux.Handle("DELETE /app/queues/{id}", requireAuth(requireAdmin(auth.RequireCSRF(http.HandlerFunc(s.queue.DeleteQueue)))))
+
+	mux.Handle("GET /app/queues/{id}/console", requireAuth(http.HandlerFunc(s.queue.GetConsole)))
+	mux.Handle("GET /app/queues/{id}/board", requireAuth(http.HandlerFunc(s.queue.GetConsoleBoard)))
+	mux.Handle("POST /app/queues/{id}/call-next", requireAuth(auth.RequireCSRF(http.HandlerFunc(s.queue.PostCallNext))))
+	mux.Handle("POST /app/queues/{id}/tickets", requireAuth(auth.RequireCSRF(http.HandlerFunc(s.queue.PostTicket))))
+	mux.Handle("POST /app/tickets/{id}/status", requireAuth(auth.RequireCSRF(http.HandlerFunc(s.queue.PostTicketStatus))))
 
 	return mux
 }

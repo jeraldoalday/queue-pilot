@@ -1,0 +1,318 @@
+package queue
+
+import (
+	"fmt"
+	"strconv"
+
+	"github.com/jeraldoalday/queuepilot/internal/db"
+	"github.com/jeraldoalday/queuepilot/internal/db/sqlc"
+	"github.com/jeraldoalday/queuepilot/internal/web/components"
+)
+
+// boardRefreshInterval is how often a console re-fetches itself. The
+// console is a shared screen: a ticket called at one counter has to appear
+// at the others without anyone reloading. Five seconds is frequent enough
+// to feel live and cheap enough that a browser left open all day is not a
+// meaningful load.
+const boardRefreshInterval = "every 5s"
+
+// publicBoardURL is the address a business prints on a QR code or opens on
+// a waiting-room screen.
+func publicBoardURL(orgSlug, queueSlug string) string {
+	return "/q/" + orgSlug + "/" + queueSlug
+}
+
+func ticketStatusClass(status string) string {
+	switch Status(status) {
+	case StatusWaiting:
+		return "text-slate-600"
+	case StatusCalled:
+		return "text-amber-700 font-medium"
+	case StatusServing:
+		return "text-green-700 font-medium"
+	case StatusDone:
+		return "text-slate-400"
+	default:
+		return "text-red-600"
+	}
+}
+
+func ticketNumber(n int32) string {
+	return "#" + strconv.Itoa(int(n))
+}
+
+templ QueuesPage(queues []sqlc.Queue, orgSlug, errMsg, csrfToken string) {
+	@components.Layout("Queues") {
+		<main class="mx-auto max-w-4xl px-6 py-16">
+			<p class="mb-4"><a href="/app" class="text-sm text-slate-600 underline">&larr; Dashboard</a></p>
+			<h1 class="text-2xl font-semibold tracking-tight">Walk-in queues</h1>
+			<p class="mt-2 text-sm text-slate-600">
+				A queue is one line customers join without an appointment. Each has a
+				public board customers can open on their phone.
+			</p>
+			<div id="queues-section" class="mt-6">
+				@QueuesSection(queues, orgSlug, errMsg, csrfToken)
+			</div>
+		</main>
+	}
+}
+
+templ QueuesSection(queues []sqlc.Queue, orgSlug, errMsg, csrfToken string) {
+	<div>
+		if errMsg != "" {
+			<p class="mb-3 rounded-md bg-red-50 px-3 py-2 text-sm text-red-700">{ errMsg }</p>
+		}
+		<form
+			hx-post="/app/queues"
+			hx-target="#queues-section"
+			hx-swap="innerHTML"
+			class="flex flex-wrap items-end gap-3 rounded-md border border-slate-200 bg-white p-4"
+		>
+			<input type="hidden" name="csrf_token" value={ csrfToken }/>
+			<div>
+				<label for="name" class="block text-xs font-medium text-slate-700">New queue name</label>
+				<input id="name" name="name" type="text" required placeholder="Walk-ins" class="mt-1 rounded-md border border-slate-300 px-2 py-1.5 text-sm"/>
+			</div>
+			<button type="submit" class="rounded-md bg-slate-900 px-3 py-2 text-sm font-medium text-white hover:bg-slate-700">
+				Create queue
+			</button>
+		</form>
+
+		if len(queues) == 0 {
+			<p class="mt-6 text-sm text-slate-500">No queues yet. Create one above to start taking walk-ins.</p>
+		} else {
+			<ul class="mt-6 space-y-3">
+				for _, q := range queues {
+					@queueRow(q, orgSlug, csrfToken)
+				}
+			</ul>
+		}
+	</div>
+}
+
+templ queueRow(q sqlc.Queue, orgSlug, csrfToken string) {
+	<li class="rounded-md border border-slate-200 bg-white p-4">
+		<form
+			hx-post={ "/app/queues/" + db.UUIDString(q.ID) }
+			hx-target="#queues-section"
+			hx-swap="innerHTML"
+			class="flex flex-wrap items-end gap-3"
+		>
+			<input type="hidden" name="csrf_token" value={ csrfToken }/>
+			<div class="grow">
+				<label class="block text-xs font-medium text-slate-700" for={ "name-" + db.UUIDString(q.ID) }>Name</label>
+				<input
+					id={ "name-" + db.UUIDString(q.ID) }
+					name="name"
+					type="text"
+					value={ q.Name }
+					required
+					class="mt-1 w-full rounded-md border border-slate-300 px-2 py-1.5 text-sm"
+				/>
+			</div>
+			<label class="flex items-center gap-2 pb-2 text-sm text-slate-700">
+				<input type="checkbox" name="active" checked?={ q.Active } class="rounded border-slate-300"/>
+				Open
+			</label>
+			<button type="submit" class="rounded-md border border-slate-300 px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-100">
+				Save
+			</button>
+			<a
+				href={ templ.SafeURL("/app/queues/" + db.UUIDString(q.ID) + "/console") }
+				class="rounded-md bg-slate-900 px-3 py-2 text-sm font-medium text-white hover:bg-slate-700"
+			>
+				Open console
+			</a>
+			<button
+				type="button"
+				hx-delete={ "/app/queues/" + db.UUIDString(q.ID) }
+				hx-vals={ fmt.Sprintf(`{"csrf_token":"%s"}`, csrfToken) }
+				hx-confirm="Delete this queue and all of its tickets?"
+				hx-target="#queues-section"
+				hx-swap="innerHTML"
+				class="px-2 py-2 text-sm text-red-600 underline"
+			>
+				Delete
+			</button>
+		</form>
+		<p class="mt-3 text-xs text-slate-500">
+			Public board:
+			<a href={ templ.SafeURL(publicBoardURL(orgSlug, q.Slug)) } class="underline" target="_blank">
+				{ publicBoardURL(orgSlug, q.Slug) }
+			</a>
+			if !q.Active {
+				<span class="ml-2 rounded bg-slate-100 px-1.5 py-0.5 text-slate-600">closed to new walk-ins</span>
+			}
+		</p>
+	</li>
+}
+
+templ ConsolePage(board Board, msg, csrfToken string) {
+	@components.Layout(board.Queue.Name) {
+		<main class="mx-auto max-w-5xl px-6 py-10">
+			<p class="mb-4"><a href="/app/queues" class="text-sm text-slate-600 underline">&larr; Queues</a></p>
+			<h1 class="text-2xl font-semibold tracking-tight">{ board.Queue.Name }</h1>
+			<p class="mt-1 text-sm text-slate-600">{ board.Day.Format("Monday, 2 January 2006") }</p>
+			<div
+				id="console-board"
+				hx-get={ "/app/queues/" + db.UUIDString(board.Queue.ID) + "/board" }
+				hx-trigger={ boardRefreshInterval }
+				hx-swap="innerHTML"
+				class="mt-6"
+			>
+				@ConsoleBoard(board, msg, csrfToken)
+			</div>
+		</main>
+	}
+}
+
+// ConsoleBoard is the whole live area: it replaces itself on every action
+// and on every poll, so a ticket called at another counter shows up here
+// without this browser doing anything.
+templ ConsoleBoard(board Board, msg, csrfToken string) {
+	<div>
+		if msg != "" {
+			<p class="mb-3 rounded-md bg-amber-50 px-3 py-2 text-sm text-amber-800">{ msg }</p>
+		}
+
+		<div class="grid gap-4 sm:grid-cols-4">
+			@statTile("Waiting", board.Stats.Waiting)
+			@statTile("Called", board.Stats.Called)
+			@statTile("Being served", board.Stats.Serving)
+			@statTile("Done today", board.Stats.Done)
+		</div>
+
+		<div class="mt-6 flex flex-wrap items-center gap-3">
+			<button
+				hx-post={ "/app/queues/" + db.UUIDString(board.Queue.ID) + "/call-next" }
+				hx-vals={ fmt.Sprintf(`{"csrf_token":"%s"}`, csrfToken) }
+				hx-target="#console-board"
+				hx-swap="innerHTML"
+				class="rounded-md bg-slate-900 px-4 py-2 text-sm font-medium text-white hover:bg-slate-700"
+			>
+				Call next
+			</button>
+			<span class="text-sm text-slate-600">
+				if ns, ok := board.NowServing(); ok {
+					Now serving <span class="font-semibold">{ ticketNumber(ns.Number) }</span> — { ns.CustomerName }
+				} else {
+					Nothing in progress
+				}
+			</span>
+		</div>
+
+		<form
+			hx-post={ "/app/queues/" + db.UUIDString(board.Queue.ID) + "/tickets" }
+			hx-target="#console-board"
+			hx-swap="innerHTML"
+			class="mt-6 flex flex-wrap items-end gap-3 rounded-md border border-slate-200 bg-white p-4"
+		>
+			<input type="hidden" name="csrf_token" value={ csrfToken }/>
+			<div>
+				<label for="customer_name" class="block text-xs font-medium text-slate-700">Add a walk-in</label>
+				<input id="customer_name" name="customer_name" type="text" required placeholder="Name" class="mt-1 rounded-md border border-slate-300 px-2 py-1.5 text-sm"/>
+			</div>
+			<div>
+				<label for="customer_phone" class="block text-xs font-medium text-slate-700">Phone (optional)</label>
+				<input id="customer_phone" name="customer_phone" type="tel" class="mt-1 rounded-md border border-slate-300 px-2 py-1.5 text-sm"/>
+			</div>
+			<button type="submit" class="rounded-md border border-slate-300 px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-100">
+				Issue ticket
+			</button>
+		</form>
+
+		<h2 class="mt-8 text-lg font-medium">At the counter</h2>
+		if len(board.InProgress) == 0 {
+			<p class="mt-2 text-sm text-slate-500">Nobody has been called yet.</p>
+		} else {
+			<ul class="mt-2 space-y-2">
+				for _, t := range board.InProgress {
+					@ticketRow(t, csrfToken)
+				}
+			</ul>
+		}
+
+		<h2 class="mt-8 text-lg font-medium">Waiting ({ strconv.Itoa(len(board.Waiting)) })</h2>
+		if len(board.Waiting) == 0 {
+			<p class="mt-2 text-sm text-slate-500">The line is empty.</p>
+		} else {
+			<ul class="mt-2 space-y-2">
+				for _, t := range board.Waiting {
+					@ticketRow(t, csrfToken)
+				}
+			</ul>
+		}
+	</div>
+}
+
+templ statTile(label string, value int) {
+	<div class="rounded-md border border-slate-200 bg-white p-4">
+		<p class="text-xs uppercase tracking-wide text-slate-500">{ label }</p>
+		<p class="mt-1 text-2xl font-semibold">{ strconv.Itoa(value) }</p>
+	</div>
+}
+
+// ticketRow renders one ticket with exactly the transitions the lifecycle
+// permits from its current status, so the console can never offer a move
+// the domain would reject.
+templ ticketRow(t sqlc.QueueTicket, csrfToken string) {
+	<li class="flex flex-wrap items-center gap-3 rounded-md border border-slate-200 bg-white px-4 py-3">
+		<span class="w-14 text-lg font-semibold">{ ticketNumber(t.Number) }</span>
+		<span class="grow">
+			{ t.CustomerName }
+			if db.TextString(t.CustomerPhone) != "" {
+				<span class="block text-xs text-slate-500">{ db.TextString(t.CustomerPhone) }</span>
+			}
+		</span>
+		<span class={ "text-sm " + ticketStatusClass(t.Status) }>{ Label(Status(t.Status)) }</span>
+		<span class="whitespace-nowrap">
+			for _, to := range allowedTransitions[Status(t.Status)] {
+				@ticketAction(db.UUIDString(t.ID), to, csrfToken)
+			}
+		</span>
+	</li>
+}
+
+// actionLabel words a transition as the thing a member of staff is doing,
+// not as the state being entered: "Start" rather than "Serving".
+func actionLabel(to Status) string {
+	switch to {
+	case StatusCalled:
+		return "Call"
+	case StatusServing:
+		return "Start"
+	case StatusWaiting:
+		return "Back to line"
+	case StatusDone:
+		return "Done"
+	case StatusNoShow:
+		return "No-show"
+	case StatusCancelled:
+		return "Cancel"
+	default:
+		return Label(to)
+	}
+}
+
+func actionClass(to Status) string {
+	switch to {
+	case StatusCancelled, StatusNoShow:
+		return "text-red-600"
+	case StatusDone:
+		return "text-green-700"
+	default:
+		return "text-slate-700"
+	}
+}
+
+templ ticketAction(ticketID string, to Status, csrfToken string) {
+	<button
+		hx-post={ "/app/tickets/" + ticketID + "/status" }
+		hx-vals={ fmt.Sprintf(`{"csrf_token":"%s","status":"%s"}`, csrfToken, string(to)) }
+		hx-target="#console-board"
+		hx-swap="innerHTML"
+		class={ "ml-2 text-sm underline " + actionClass(to) }
+	>
+		{ actionLabel(to) }
+	</button>
+}
