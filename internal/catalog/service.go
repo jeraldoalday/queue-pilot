@@ -50,7 +50,7 @@ func CreateService(ctx context.Context, pool *pgxpool.Pool, orgID string, in Ser
 	}
 
 	q := sqlc.New(pool)
-	svcSlug, err := uniqueServiceSlug(ctx, q, orgID, slug.Slugify(in.Name))
+	svcSlug, err := uniqueServiceSlug(ctx, q, orgID, slug.SlugifyOr(in.Name, "service"))
 	if err != nil {
 		return sqlc.Service{}, err
 	}

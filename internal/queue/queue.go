@@ -69,7 +69,7 @@ func Create(ctx context.Context, pool *pgxpool.Pool, orgID string, in Input) (sq
 	name := strings.TrimSpace(in.Name)
 	q := sqlc.New(pool)
 
-	queueSlug, err := uniqueQueueSlug(ctx, q, orgID, slug.Slugify(name))
+	queueSlug, err := uniqueQueueSlug(ctx, q, orgID, slug.SlugifyOr(name, "queue"))
 	if err != nil {
 		return sqlc.Queue{}, err
 	}

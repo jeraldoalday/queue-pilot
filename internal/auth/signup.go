@@ -73,7 +73,7 @@ func Signup(ctx context.Context, pool *pgxpool.Pool, sessions *session.Store, in
 		return session.Identity{}, err
 	}
 
-	orgSlug, err := uniqueOrgSlug(ctx, sqlc.New(pool), slug.Slugify(in.OrgName))
+	orgSlug, err := uniqueOrgSlug(ctx, sqlc.New(pool), slug.SlugifyOr(in.OrgName, "org"))
 	if err != nil {
 		return session.Identity{}, err
 	}

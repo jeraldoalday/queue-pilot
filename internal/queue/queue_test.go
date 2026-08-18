@@ -69,13 +69,17 @@ func TestQueueSlugsFromRealisticNames(t *testing.T) {
 		{"Front Desk", "front-desk"},
 		{"Pharmacy — Counter 2", "pharmacy-counter-2"},
 		{"  Deli  ", "deli"},
-		{"!!!", "org"}, // Slugify's fallback: never an empty URL segment
+		// A name with nothing sluggable in it falls back to the domain's
+		// own word, so the public URL reads /q/acme/queue rather than
+		// naming some other kind of thing.
+		{"!!!", "queue"},
+		{"待ち行列", "queue"},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			if got := slug.Slugify(tt.name); got != tt.want {
-				t.Fatalf("Slugify(%q) = %q, want %q", tt.name, got, tt.want)
+			if got := slug.SlugifyOr(tt.name, "queue"); got != tt.want {
+				t.Fatalf("SlugifyOr(%q, \"queue\") = %q, want %q", tt.name, got, tt.want)
 			}
 		})
 	}
