@@ -43,10 +43,13 @@ type BookInput struct {
 }
 
 func (in BookInput) validate() error {
-	if in.ServiceID == "" {
+	// The IDs arrive as form fields, so a malformed value is ordinary bad
+	// input rather than a programmer error — it has to be rejected here,
+	// before db.MustUUID would panic on it further down.
+	if !db.IsUUID(in.ServiceID) {
 		return ValidationError{"please choose a service"}
 	}
-	if in.StaffUserID == "" {
+	if !db.IsUUID(in.StaffUserID) {
 		return ValidationError{"please choose a staff member"}
 	}
 	if strings.TrimSpace(in.CustomerName) == "" {

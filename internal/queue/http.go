@@ -15,6 +15,7 @@ import (
 	"github.com/jeraldoalday/queuepilot/internal/db"
 	"github.com/jeraldoalday/queuepilot/internal/db/sqlc"
 	"github.com/jeraldoalday/queuepilot/internal/org"
+	"github.com/jeraldoalday/queuepilot/internal/platform/httpx"
 	"github.com/jeraldoalday/queuepilot/internal/tenant"
 )
 
@@ -78,7 +79,11 @@ func (h *Handlers) PostQueue(w http.ResponseWriter, r *http.Request) {
 		Name:   r.FormValue("name"),
 		Active: r.FormValue("active") != "",
 	}
-	if _, err := Update(r.Context(), h.pool, orgID, r.PathValue("id"), in); err != nil {
+	queueID, ok := httpx.PathUUID(w, r, "id")
+	if !ok {
+		return
+	}
+	if _, err := Update(r.Context(), h.pool, orgID, queueID, in); err != nil {
 		h.renderQueueSection(w, r, orgID, ident.CSRFToken, h.userFacingError(err), http.StatusUnprocessableEntity)
 		return
 	}
@@ -92,7 +97,12 @@ func (h *Handlers) DeleteQueue(w http.ResponseWriter, r *http.Request) {
 	}
 	ident, _ := auth.CurrentIdentity(r.Context())
 
-	if err := Delete(r.Context(), h.pool, orgID, r.PathValue("id")); err != nil {
+	queueID, ok := httpx.PathUUID(w, r, "id")
+	if !ok {
+		return
+	}
+
+	if err := Delete(r.Context(), h.pool, orgID, queueID); err != nil {
 		h.renderQueueSection(w, r, orgID, ident.CSRFToken,
 			"Couldn't delete that queue. Please try again.", http.StatusUnprocessableEntity)
 		return
@@ -109,7 +119,12 @@ func (h *Handlers) GetConsole(w http.ResponseWriter, r *http.Request) {
 	}
 	ident, _ := auth.CurrentIdentity(r.Context())
 
-	board, _, err := h.board(r.Context(), orgID, r.PathValue("id"))
+	queueID, ok := httpx.PathUUID(w, r, "id")
+	if !ok {
+		return
+	}
+
+	board, _, err := h.board(r.Context(), orgID, queueID)
 	if err != nil {
 		h.boardError(w, r, err, "GetConsole")
 		return
@@ -128,7 +143,12 @@ func (h *Handlers) GetConsoleBoard(w http.ResponseWriter, r *http.Request) {
 	}
 	ident, _ := auth.CurrentIdentity(r.Context())
 
-	board, _, err := h.board(r.Context(), orgID, r.PathValue("id"))
+	queueID, ok := httpx.PathUUID(w, r, "id")
+	if !ok {
+		return
+	}
+
+	board, _, err := h.board(r.Context(), orgID, queueID)
 	if err != nil {
 		h.boardError(w, r, err, "GetConsoleBoard")
 		return
@@ -144,7 +164,10 @@ func (h *Handlers) PostCallNext(w http.ResponseWriter, r *http.Request) {
 	}
 	ident, _ := auth.CurrentIdentity(r.Context())
 
-	queueID := r.PathValue("id")
+	queueID, ok := httpx.PathUUID(w, r, "id")
+	if !ok {
+		return
+	}
 	queue, day, err := h.queueAndDay(r.Context(), orgID, queueID)
 	if err != nil {
 		h.boardError(w, r, err, "PostCallNext")
@@ -173,7 +196,10 @@ func (h *Handlers) PostTicket(w http.ResponseWriter, r *http.Request) {
 	}
 	ident, _ := auth.CurrentIdentity(r.Context())
 
-	queueID := r.PathValue("id")
+	queueID, ok := httpx.PathUUID(w, r, "id")
+	if !ok {
+		return
+	}
 	queue, day, err := h.queueAndDay(r.Context(), orgID, queueID)
 	if err != nil {
 		h.boardError(w, r, err, "PostTicket")
@@ -201,13 +227,18 @@ func (h *Handlers) PostTicketStatus(w http.ResponseWriter, r *http.Request) {
 	}
 	ident, _ := auth.CurrentIdentity(r.Context())
 
+	ticketID, ok := httpx.PathUUID(w, r, "id")
+	if !ok {
+		return
+	}
+
 	to, valid := ParseStatus(r.FormValue("status"))
 	if !valid {
 		http.Error(w, "unknown status", http.StatusBadRequest)
 		return
 	}
 
-	ticket, err := SetStatus(r.Context(), h.pool, orgID, r.PathValue("id"), to, ident.UserID)
+	ticket, err := SetStatus(r.Context(), h.pool, orgID, ticketID, to, ident.UserID)
 	if err != nil {
 		switch {
 		case errors.Is(err, pgx.ErrNoRows):

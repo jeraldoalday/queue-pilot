@@ -12,6 +12,7 @@ import (
 
 	"github.com/jeraldoalday/queuepilot/internal/auth"
 	"github.com/jeraldoalday/queuepilot/internal/db/sqlc"
+	"github.com/jeraldoalday/queuepilot/internal/platform/httpx"
 	"github.com/jeraldoalday/queuepilot/internal/tenant"
 )
 
@@ -72,7 +73,12 @@ func (h *Handlers) GetServiceEdit(w http.ResponseWriter, r *http.Request) {
 	}
 	ident, _ := auth.CurrentIdentity(r.Context())
 
-	svc, err := GetService(r.Context(), h.pool, orgID, r.PathValue("id"))
+	serviceID, ok := httpx.PathUUID(w, r, "id")
+	if !ok {
+		return
+	}
+
+	svc, err := GetService(r.Context(), h.pool, orgID, serviceID)
 	if err != nil {
 		http.NotFound(w, r)
 		return
@@ -90,7 +96,12 @@ func (h *Handlers) GetServiceRow(w http.ResponseWriter, r *http.Request) {
 	}
 	ident, _ := auth.CurrentIdentity(r.Context())
 
-	svc, err := GetService(r.Context(), h.pool, orgID, r.PathValue("id"))
+	serviceID, ok := httpx.PathUUID(w, r, "id")
+	if !ok {
+		return
+	}
+
+	svc, err := GetService(r.Context(), h.pool, orgID, serviceID)
 	if err != nil {
 		http.NotFound(w, r)
 		return
@@ -101,7 +112,7 @@ func (h *Handlers) GetServiceRow(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "internal error", http.StatusInternalServerError)
 		return
 	}
-	assigned, err := AssignedStaffIDs(r.Context(), h.pool, orgID, r.PathValue("id"))
+	assigned, err := AssignedStaffIDs(r.Context(), h.pool, orgID, serviceID)
 	if err != nil {
 		h.log.Error("GetServiceRow: assigned staff", "error", err)
 		http.Error(w, "internal error", http.StatusInternalServerError)
@@ -117,7 +128,10 @@ func (h *Handlers) PutService(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	ident, _ := auth.CurrentIdentity(r.Context())
-	serviceID := r.PathValue("id")
+	serviceID, ok := httpx.PathUUID(w, r, "id")
+	if !ok {
+		return
+	}
 
 	in := ServiceInput{
 		Name:            r.FormValue("name"),
@@ -163,7 +177,12 @@ func (h *Handlers) DeleteServiceHandler(w http.ResponseWriter, r *http.Request) 
 	}
 	ident, _ := auth.CurrentIdentity(r.Context())
 
-	if err := DeleteService(r.Context(), h.pool, orgID, r.PathValue("id")); err != nil {
+	serviceID, ok := httpx.PathUUID(w, r, "id")
+	if !ok {
+		return
+	}
+
+	if err := DeleteService(r.Context(), h.pool, orgID, serviceID); err != nil {
 		h.renderSectionWithError(w, r, orgID, ident.CSRFToken,
 			"Couldn't delete that service — it may already be used by appointments.")
 		return
@@ -179,9 +198,16 @@ func (h *Handlers) PostToggleStaff(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	ident, _ := auth.CurrentIdentity(r.Context())
-	serviceID := r.PathValue("id")
+	serviceID, ok := httpx.PathUUID(w, r, "id")
+	if !ok {
+		return
+	}
+	staffID, ok := httpx.PathUUID(w, r, "staffID")
+	if !ok {
+		return
+	}
 
-	if err := ToggleStaffAssignment(r.Context(), h.pool, orgID, serviceID, r.PathValue("staffID")); err != nil {
+	if err := ToggleStaffAssignment(r.Context(), h.pool, orgID, serviceID, staffID); err != nil {
 		h.log.Error("PostToggleStaff", "error", err)
 		http.Error(w, "internal error", http.StatusInternalServerError)
 		return

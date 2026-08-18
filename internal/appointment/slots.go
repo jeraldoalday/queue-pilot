@@ -19,6 +19,16 @@ import (
 // Both the admin manual-booking UI and the public booking page use this,
 // so the two can't disagree about what's available.
 func AvailableSlots(ctx context.Context, pool *pgxpool.Pool, orgID, staffUserID, serviceID string, date time.Time) ([]availability.Slot, error) {
+	// staffUserID and serviceID come from form fields, so they are
+	// validated rather than trusted: without this a malformed selection
+	// reaches db.MustUUID and panics the request.
+	if !db.IsUUID(serviceID) {
+		return nil, ValidationError{"please choose a service"}
+	}
+	if !db.IsUUID(staffUserID) {
+		return nil, ValidationError{"please choose a staff member"}
+	}
+
 	q := sqlc.New(pool)
 
 	svc, err := q.GetService(ctx, sqlc.GetServiceParams{

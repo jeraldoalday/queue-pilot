@@ -12,6 +12,7 @@ import (
 	"github.com/jeraldoalday/queuepilot/internal/auth"
 	"github.com/jeraldoalday/queuepilot/internal/db"
 	"github.com/jeraldoalday/queuepilot/internal/db/sqlc"
+	"github.com/jeraldoalday/queuepilot/internal/platform/httpx"
 	"github.com/jeraldoalday/queuepilot/internal/tenant"
 )
 
@@ -42,7 +43,10 @@ func (h *Handlers) GetAvailability(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	ident, _ := auth.CurrentIdentity(r.Context())
-	staffID := r.PathValue("staffID")
+	staffID, ok := httpx.PathUUID(w, r, "staffID")
+	if !ok {
+		return
+	}
 
 	staffUser, err := h.staffUser(r, orgID, staffID)
 	if err != nil {
@@ -65,7 +69,10 @@ func (h *Handlers) PostAvailability(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	ident, _ := auth.CurrentIdentity(r.Context())
-	staffID := r.PathValue("staffID")
+	staffID, ok := httpx.PathUUID(w, r, "staffID")
+	if !ok {
+		return
+	}
 
 	staffUser, err := h.staffUser(r, orgID, staffID)
 	if err != nil {
@@ -107,7 +114,10 @@ func (h *Handlers) DeleteAvailabilityHandler(w http.ResponseWriter, r *http.Requ
 		return
 	}
 	ident, _ := auth.CurrentIdentity(r.Context())
-	staffID := r.PathValue("staffID")
+	staffID, ok := httpx.PathUUID(w, r, "staffID")
+	if !ok {
+		return
+	}
 
 	staffUser, err := h.staffUser(r, orgID, staffID)
 	if err != nil {
@@ -115,7 +125,12 @@ func (h *Handlers) DeleteAvailabilityHandler(w http.ResponseWriter, r *http.Requ
 		return
 	}
 
-	if err := DeleteHours(r.Context(), h.pool, orgID, staffID, r.PathValue("id")); err != nil {
+	hoursID, ok := httpx.PathUUID(w, r, "id")
+	if !ok {
+		return
+	}
+
+	if err := DeleteHours(r.Context(), h.pool, orgID, staffID, hoursID); err != nil {
 		h.log.Error("DeleteAvailabilityHandler", "error", err)
 		http.Error(w, "internal error", http.StatusInternalServerError)
 		return

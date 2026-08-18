@@ -17,6 +17,7 @@ import (
 	"github.com/jeraldoalday/queuepilot/internal/db"
 	"github.com/jeraldoalday/queuepilot/internal/db/sqlc"
 	"github.com/jeraldoalday/queuepilot/internal/org"
+	"github.com/jeraldoalday/queuepilot/internal/platform/httpx"
 	"github.com/jeraldoalday/queuepilot/internal/tenant"
 )
 
@@ -181,13 +182,18 @@ func (h *Handlers) PostStatus(w http.ResponseWriter, r *http.Request) {
 	}
 	ident, _ := auth.CurrentIdentity(r.Context())
 
-	to, ok := ParseStatus(r.FormValue("status"))
-	if !ok {
+	to, valid := ParseStatus(r.FormValue("status"))
+	if !valid {
 		http.Error(w, "unknown status", http.StatusBadRequest)
 		return
 	}
 
-	appt, err := SetStatus(r.Context(), h.pool, orgID, r.PathValue("id"), to)
+	apptID, ok := httpx.PathUUID(w, r, "id")
+	if !ok {
+		return
+	}
+
+	appt, err := SetStatus(r.Context(), h.pool, orgID, apptID, to)
 	if err != nil {
 		switch {
 		case errors.Is(err, pgx.ErrNoRows):

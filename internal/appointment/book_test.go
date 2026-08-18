@@ -6,9 +6,11 @@ import (
 )
 
 func TestBookInputValidate(t *testing.T) {
+	// Real UUID shapes: validate() checks the form of these IDs, since a
+	// malformed one would otherwise reach db.MustUUID and panic.
 	valid := BookInput{
-		ServiceID:     "svc-1",
-		StaffUserID:   "staff-1",
+		ServiceID:     "0f7c9b1e-6e1a-4a5b-9d0c-2f3a4b5c6d7e",
+		StaffUserID:   "5c1a7f3b-2d4e-4c6a-8b9d-1e2f3a4b5c6d",
 		CustomerName:  "Dana Customer",
 		CustomerEmail: "dana@example.test",
 		StartsAt:      time.Date(2026, 3, 2, 9, 0, 0, 0, time.UTC),
@@ -36,6 +38,49 @@ func TestBookInputValidate(t *testing.T) {
 			}
 			if _, ok := err.(ValidationError); !ok {
 				t.Errorf("expected ValidationError, got %T: %v", err, err)
+			}
+		})
+	}
+}
+
+// The service and staff IDs arrive as form fields, so a malformed one is
+// ordinary bad input. Before this was validated it reached db.MustUUID and
+// panicked the request instead of re-rendering the form with an error.
+func TestBookInputRejectsMalformedIDs(t *testing.T) {
+	valid := "0f7c9b1e-6e1a-4a5b-9d0c-2f3a4b5c6d7e"
+
+	tests := []struct {
+		name    string
+		in      BookInput
+		wantErr string
+	}{
+		{
+			name:    "a malformed service ID",
+			in:      BookInput{ServiceID: "notauuid", StaffUserID: valid},
+			wantErr: "please choose a service",
+		},
+		{
+			name:    "an empty service ID",
+			in:      BookInput{ServiceID: "", StaffUserID: valid},
+			wantErr: "please choose a service",
+		},
+		{
+			name:    "a malformed staff ID",
+			in:      BookInput{ServiceID: valid, StaffUserID: "notauuid"},
+			wantErr: "please choose a staff member",
+		},
+		{
+			name:    "an empty staff ID",
+			in:      BookInput{ServiceID: valid, StaffUserID: ""},
+			wantErr: "please choose a staff member",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := tt.in.validate()
+			if err == nil || err.Error() != tt.wantErr {
+				t.Fatalf("validate() = %v, want %q", err, tt.wantErr)
 			}
 		})
 	}

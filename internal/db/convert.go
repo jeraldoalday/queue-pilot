@@ -56,6 +56,15 @@ func ParseUUID(s string) (pgtype.UUID, error) {
 	return pgtype.UUID{Bytes: [16]byte(u), Valid: true}, nil
 }
 
+// IsUUID reports whether an externally supplied string is a well-formed
+// UUID. Domain validation uses it to reject a malformed ID with a normal
+// validation error, rather than letting it reach MustUUID and panic —
+// MustUUID's panic is meant for IDs this app generated itself.
+func IsUUID(s string) bool {
+	_, err := uuid.Parse(s)
+	return err == nil
+}
+
 func UUIDString(u pgtype.UUID) string {
 	return uuid.UUID(u.Bytes).String()
 }
