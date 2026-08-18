@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"os"
 	"os/signal"
@@ -18,10 +19,47 @@ import (
 )
 
 func main() {
-	if err := run(); err != nil {
+	if err := dispatch(os.Args[1:]); err != nil {
 		fmt.Fprintln(os.Stderr, "queuepilot:", err)
 		os.Exit(1)
 	}
+}
+
+// dispatch routes the command line to a subcommand. With no arguments the
+// binary starts the server, which is the overwhelmingly common case and
+// what every deployment target invokes.
+//
+// An unrecognised argument is an error rather than being ignored: the
+// Makefile's `seed` target used to fall through to starting the server,
+// so `make seed` silently served HTTP and appeared to hang instead of
+// seeding anything.
+func dispatch(args []string) error {
+	if len(args) == 0 {
+		return run()
+	}
+
+	switch args[0] {
+	case "serve":
+		return run()
+	case "seed":
+		return seed(args[1:])
+	case "help", "-h", "--help":
+		usage(os.Stdout)
+		return nil
+	default:
+		usage(os.Stderr)
+		return fmt.Errorf("unknown command %q", args[0])
+	}
+}
+
+func usage(w io.Writer) {
+	fmt.Fprint(w, `queuepilot - appointment booking and walk-in queue management
+
+usage:
+  queuepilot [serve]   start the HTTP server (default)
+  queuepilot seed      populate the database with a demo organization
+  queuepilot help      show this message
+`)
 }
 
 func run() error {
