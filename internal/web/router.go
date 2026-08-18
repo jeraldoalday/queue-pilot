@@ -113,6 +113,9 @@ func (s *Server) Routes() http.Handler {
 	mux.Handle("DELETE /app/queues/{id}", requireAuth(requireAdmin(auth.RequireCSRF(http.HandlerFunc(s.queue.DeleteQueue)))))
 
 	mux.Handle("GET /app/queues/{id}/console", requireAuth(http.HandlerFunc(s.queue.GetConsole)))
+	// The report is staff-visible for the same reason the console is: the
+	// people working the counter are the ones who act on when the rush was.
+	mux.Handle("GET /app/queues/{id}/report", requireAuth(http.HandlerFunc(s.queue.GetReport)))
 	mux.Handle("GET /app/queues/{id}/board", requireAuth(http.HandlerFunc(s.queue.GetConsoleBoard)))
 	mux.Handle("POST /app/queues/{id}/call-next", requireAuth(auth.RequireCSRF(http.HandlerFunc(s.queue.PostCallNext))))
 	mux.Handle("POST /app/queues/{id}/tickets", requireAuth(auth.RequireCSRF(http.HandlerFunc(s.queue.PostTicket))))

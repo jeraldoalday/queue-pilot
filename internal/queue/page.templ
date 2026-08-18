@@ -152,7 +152,10 @@ templ ConsolePage(board Board, msg, csrfToken string) {
 		<main class="mx-auto max-w-5xl px-6 py-10">
 			<p class="mb-4"><a href="/app/queues" class="text-sm text-slate-600 underline">&larr; Queues</a></p>
 			<h1 class="text-2xl font-semibold tracking-tight">{ board.Queue.Name }</h1>
-			<p class="mt-1 text-sm text-slate-600">{ board.Day.Format("Monday, 2 January 2006") }</p>
+			<p class="mt-1 text-sm text-slate-600">
+				{ board.Day.Format("Monday, 2 January 2006") } ·
+				<a href={ templ.SafeURL(reportURL(db.UUIDString(board.Queue.ID), "")) } class="underline">Day report</a>
+			</p>
 			<div
 				id="console-board"
 				hx-get={ "/app/queues/" + db.UUIDString(board.Queue.ID) + "/board" }
