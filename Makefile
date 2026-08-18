@@ -1,6 +1,6 @@
 .PHONY: run dev docker-up docker-down migrate-up migrate-down migrate-create \
 	sqlc-generate templ-generate tailwind-build tailwind-watch test test-integration seed \
-	generate check
+	generate check check-all version build
 
 -include .env
 export
@@ -57,6 +57,26 @@ check: generate
 
 test:
 	go test ./... -race -short
+
+# check-all is check plus the integration tests, which need DATABASE_URL
+# to point at a migrated database. It is what to run before pushing
+# anything that touches a query, a transaction or a constraint — the
+# guarantees those carry (no double-booking, no duplicate ticket numbers,
+# one winner per status change, no cross-tenant reads) are only provable
+# against a real Postgres.
+check-all: check test-integration
+
+# version prints the commit a build from this tree would identify itself
+# as — the same string /version serves and the startup log opens with.
+#
+# It builds first rather than using `go run`, which does not stamp the VCS
+# revision into what it runs and so reports "unknown" no matter what the
+# tree contains. /bin is already gitignored.
+version: build
+	./bin/queuepilot version
+
+build:
+	go build -o bin/queuepilot ./cmd/queuepilot
 
 test-integration:
 	go test ./... -race -run Integration -tags=integration
