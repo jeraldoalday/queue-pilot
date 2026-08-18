@@ -56,6 +56,18 @@ jobs:
           sqlc generate
           git diff --exit-code -- internal/db/sqlc || (echo "::error::sqlc generate produced a diff — commit the regenerated files" && exit 1)
 
+      # app.css is a committed build artifact, so a template using a class
+      # Tailwind has never seen renders unstyled in production while
+      # looking fine to whoever added it. This is the same drift check the
+      # generated Go code gets, for the same reason.
+      - name: Install Tailwind CLI
+        run: ./scripts/install-tailwind.sh
+
+      - name: Build Tailwind (drift check)
+        run: |
+          make tailwind-build
+          git diff --exit-code -- internal/web/static/css/app.css || (echo "::error::tailwind-build produced a diff — run 'make tailwind-build' and commit internal/web/static/css/app.css" && exit 1)
+
       - name: Run migrations
         run: migrate -path migrations -database "$DATABASE_URL" up
 
