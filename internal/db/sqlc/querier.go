@@ -12,6 +12,11 @@ import (
 
 type Querier interface {
 	AssignStaffService(ctx context.Context, arg AssignStaffServiceParams) error
+	// Mean hands-on service time for recently completed tickets, used to
+	// estimate waits. Only 'done' tickets count: a no-show or cancellation
+	// says nothing about how long serving someone takes. The 30-day window
+	// keeps the estimate responsive to how the business runs now.
+	AverageServiceSeconds(ctx context.Context, queueID pgtype.UUID) (float64, error)
 	CountOrganizations(ctx context.Context) (int64, error)
 	// Half-open overlap test: an existing booking conflicts only if it starts
 	// before the new one ends AND ends after the new one starts, so bookings
@@ -19,35 +24,72 @@ type Querier interface {
 	// named explicitly because positional names sqlc infers here read
 	// backwards (it names them after the compared column, not the argument).
 	CountOverlappingAppointments(ctx context.Context, arg CountOverlappingAppointmentsParams) (int64, error)
+	// How many people are still waiting in front of ticket `number` — the
+	// input to the customer-facing wait estimate.
+	CountWaitingAhead(ctx context.Context, arg CountWaitingAheadParams) (int64, error)
 	CreateAppointment(ctx context.Context, arg CreateAppointmentParams) (Appointment, error)
 	CreateAvailability(ctx context.Context, arg CreateAvailabilityParams) (StaffAvailability, error)
 	CreateOrganization(ctx context.Context, arg CreateOrganizationParams) (Organization, error)
+	CreateQueue(ctx context.Context, arg CreateQueueParams) (Queue, error)
 	CreateService(ctx context.Context, arg CreateServiceParams) (Service, error)
 	CreateSession(ctx context.Context, arg CreateSessionParams) (Session, error)
+	CreateTicket(ctx context.Context, arg CreateTicketParams) (QueueTicket, error)
 	CreateUser(ctx context.Context, arg CreateUserParams) (User, error)
 	DeleteAvailability(ctx context.Context, arg DeleteAvailabilityParams) error
+	DeleteQueue(ctx context.Context, arg DeleteQueueParams) error
 	DeleteService(ctx context.Context, arg DeleteServiceParams) error
 	DeleteSession(ctx context.Context, token string) error
 	GetAppointment(ctx context.Context, arg GetAppointmentParams) (Appointment, error)
 	GetOrganizationByID(ctx context.Context, id pgtype.UUID) (Organization, error)
 	GetOrganizationBySlug(ctx context.Context, slug string) (Organization, error)
+	GetQueue(ctx context.Context, arg GetQueueParams) (Queue, error)
+	GetQueueBySlug(ctx context.Context, arg GetQueueBySlugParams) (Queue, error)
 	GetService(ctx context.Context, arg GetServiceParams) (Service, error)
 	GetServiceBySlug(ctx context.Context, arg GetServiceBySlugParams) (Service, error)
 	GetSessionWithUser(ctx context.Context, token string) (GetSessionWithUserRow, error)
+	GetTicket(ctx context.Context, arg GetTicketParams) (QueueTicket, error)
+	// The public status page has no session to scope by, so it scopes by the
+	// queue resolved from the URL instead: a ticket ID from another queue (or
+	// another org's queue) reads as not found.
+	GetTicketInQueue(ctx context.Context, arg GetTicketInQueueParams) (QueueTicket, error)
 	GetUserByEmail(ctx context.Context, lower string) (User, error)
 	GetUserByID(ctx context.Context, arg GetUserByIDParams) (User, error)
 	IsStaffAssignedToService(ctx context.Context, arg IsStaffAssignedToServiceParams) (bool, error)
+	ListActiveQueuesByOrg(ctx context.Context, orgID pgtype.UUID) ([]Queue, error)
 	ListAppointmentsForOrgOnDay(ctx context.Context, arg ListAppointmentsForOrgOnDayParams) ([]ListAppointmentsForOrgOnDayRow, error)
 	ListAppointmentsForStaffOnDay(ctx context.Context, arg ListAppointmentsForStaffOnDayParams) ([]Appointment, error)
 	ListAvailabilityByStaff(ctx context.Context, arg ListAvailabilityByStaffParams) ([]StaffAvailability, error)
+	// "Open" is everything still in play: waiting, called, or being served.
+	// The board and the console both show exactly this set.
+	ListOpenTicketsForQueueOnDate(ctx context.Context, arg ListOpenTicketsForQueueOnDateParams) ([]QueueTicket, error)
+	ListQueuesByOrg(ctx context.Context, orgID pgtype.UUID) ([]Queue, error)
 	ListServicesByOrg(ctx context.Context, orgID pgtype.UUID) ([]Service, error)
 	ListStaffForService(ctx context.Context, arg ListStaffForServiceParams) ([]ListStaffForServiceRow, error)
 	ListStaffServiceAssignmentsByOrg(ctx context.Context, orgID pgtype.UUID) ([]ListStaffServiceAssignmentsByOrgRow, error)
 	ListStaffUsersByOrg(ctx context.Context, orgID pgtype.UUID) ([]ListStaffUsersByOrgRow, error)
+	ListTicketsForQueueOnDate(ctx context.Context, arg ListTicketsForQueueOnDateParams) ([]QueueTicket, error)
+	// Claims the lowest-numbered waiting ticket for the caller's transaction.
+	// FOR UPDATE SKIP LOCKED is what makes "call next" safe with several staff
+	// clicking at once: a row another transaction has already claimed is
+	// skipped rather than waited on, so two staff always get two different
+	// customers instead of both being handed the same one.
+	LockNextWaitingTicket(ctx context.Context, arg LockNextWaitingTicketParams) (QueueTicket, error)
+	// Allocates the next ticket number for one queue on one service day.
+	// The upsert is a single statement, so two concurrent walk-ins can never
+	// receive the same number: the second one blocks on the first's row lock
+	// and then reads the already-incremented value.
+	NextTicketNumber(ctx context.Context, arg NextTicketNumberParams) (int32, error)
+	QueueStatsForDate(ctx context.Context, arg QueueStatsForDateParams) (QueueStatsForDateRow, error)
 	TouchSession(ctx context.Context, token string) error
 	UnassignStaffService(ctx context.Context, arg UnassignStaffServiceParams) error
 	UpdateAppointmentStatus(ctx context.Context, arg UpdateAppointmentStatusParams) (Appointment, error)
+	UpdateQueue(ctx context.Context, arg UpdateQueueParams) (Queue, error)
 	UpdateService(ctx context.Context, arg UpdateServiceParams) (Service, error)
+	// Stamps the timestamp that matches the new status, so the lifecycle
+	// times are recorded by the same statement that moves the ticket and
+	// can't drift apart. called_by_user_id is only overwritten when a caller
+	// is supplied, so a later transition doesn't erase who called the ticket.
+	UpdateTicketStatus(ctx context.Context, arg UpdateTicketStatusParams) (QueueTicket, error)
 }
 
 var _ Querier = (*Queries)(nil)

@@ -75,6 +75,32 @@ func Int4(v *int32) pgtype.Int4 {
 	return pgtype.Int4{Int32: *v, Valid: true}
 }
 
+// Date converts a calendar day into a Postgres DATE. Only the year, month
+// and day are taken — the caller is expected to have already resolved the
+// instant into the org's timezone (see org.Location), so "today" means the
+// business's today rather than the server's.
+func Date(t time.Time) pgtype.Date {
+	y, m, d := t.Date()
+	return pgtype.Date{Time: time.Date(y, m, d, 0, 0, 0, 0, time.UTC), Valid: true}
+}
+
+// DateTime converts a Postgres DATE back into a time.Time at midnight in
+// loc, the inverse of Date for a value read in the org's timezone.
+func DateTime(d pgtype.Date, loc *time.Location) time.Time {
+	y, m, day := d.Time.Date()
+	return time.Date(y, m, day, 0, 0, 0, 0, loc)
+}
+
+// UUIDOrNil converts an optional application ID into pgtype.UUID, leaving
+// it NULL when the string is empty. Used for nullable foreign keys such as
+// queue_tickets.called_by_user_id.
+func UUIDOrNil(s string) pgtype.UUID {
+	if s == "" {
+		return pgtype.UUID{}
+	}
+	return MustUUID(s)
+}
+
 func Timestamptz(t time.Time) pgtype.Timestamptz {
 	return pgtype.Timestamptz{Time: t, Valid: true}
 }

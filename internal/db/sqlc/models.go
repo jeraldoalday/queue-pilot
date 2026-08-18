@@ -62,6 +62,7 @@ type QueueTicket struct {
 	CalledAt       pgtype.Timestamptz `json:"called_at"`
 	ServingAt      pgtype.Timestamptz `json:"serving_at"`
 	CompletedAt    pgtype.Timestamptz `json:"completed_at"`
+	TicketDate     pgtype.Date        `json:"ticket_date"`
 }
 
 type Service struct {
