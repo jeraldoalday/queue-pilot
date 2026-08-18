@@ -3,6 +3,7 @@ package web
 import (
 	"log/slog"
 	"net/http"
+	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 
@@ -13,6 +14,7 @@ import (
 	"github.com/jeraldoalday/queuepilot/internal/config"
 	sqlcgen "github.com/jeraldoalday/queuepilot/internal/db/sqlc"
 	"github.com/jeraldoalday/queuepilot/internal/platform/clock"
+	"github.com/jeraldoalday/queuepilot/internal/platform/ratelimit"
 	"github.com/jeraldoalday/queuepilot/internal/queue"
 	"github.com/jeraldoalday/queuepilot/internal/session"
 	"github.com/jeraldoalday/queuepilot/internal/tenant"
@@ -29,6 +31,7 @@ type Server struct {
 	availability *availability.Handlers
 	appointment  *appointment.Handlers
 	queue        *queue.Handlers
+	publicLimit  *ratelimit.Limiter
 }
 
 func NewServer(cfg config.Config, log *slog.Logger, pool *pgxpool.Pool) *Server {
@@ -44,8 +47,21 @@ func NewServer(cfg config.Config, log *slog.Logger, pool *pgxpool.Pool) *Server 
 		availability: availability.NewHandlers(pool, log),
 		appointment:  appointment.NewHandlers(pool, log),
 		queue:        queue.NewHandlers(pool, log),
+		publicLimit:  ratelimit.New(publicBurst, publicInterval, clock.Real{}),
 	}
 }
+
+// publicBurst and publicInterval bound how fast one client can take
+// tickets from the unauthenticated join form. That endpoint has no session
+// and no CSRF token to check — a public kiosk cannot have either — so this
+// is what stops one person or script from filling a business's line with
+// junk numbers. The allowance is generous on purpose: a family arriving
+// together shares an IP and must not be blocked, while a script taking
+// hundreds is stopped well short of ruining anyone's morning.
+const (
+	publicBurst    = 5
+	publicInterval = 30 * time.Second
+)
 
 func (s *Server) Routes() http.Handler {
 	mux := http.NewServeMux()
@@ -111,7 +127,11 @@ func (s *Server) Routes() http.Handler {
 	mux.HandleFunc("GET /q/{orgSlug}/{queueSlug}/board", s.queue.GetPublicBoardPartial)
 	mux.HandleFunc("GET /q/{orgSlug}/{queueSlug}/display", s.queue.GetPublicDisplay)
 	mux.HandleFunc("GET /q/{orgSlug}/{queueSlug}/display/board", s.queue.GetPublicDisplayPartial)
-	mux.HandleFunc("POST /q/{orgSlug}/{queueSlug}/tickets", s.queue.PostPublicTicket)
+	// Only the write is limited. The board and ticket pages poll on a
+	// timer, so limiting reads would throttle the feature's own refresh;
+	// taking a ticket is the action that costs a queue something.
+	limitPublic := ratelimit.Middleware(s.publicLimit, s.cfg.TrustProxyHeaders, s.log)
+	mux.Handle("POST /q/{orgSlug}/{queueSlug}/tickets", limitPublic(http.HandlerFunc(s.queue.PostPublicTicket)))
 	mux.HandleFunc("GET /q/{orgSlug}/{queueSlug}/t/{ticketID}", s.queue.GetPublicTicket)
 	mux.HandleFunc("GET /q/{orgSlug}/{queueSlug}/t/{ticketID}/status", s.queue.GetPublicTicketPartial)
 
