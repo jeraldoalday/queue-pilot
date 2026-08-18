@@ -195,6 +195,10 @@ templ PublicTicketBody(o sqlc.Organization, board Board, ticket sqlc.QueueTicket
 			</div>
 		</div>
 
+		if CustomerCancellable(Status(ticket.Status)) {
+			@ticketLeaveForm(o, board, ticket)
+		}
+
 		<p class="mt-4 text-center text-xs text-slate-500">
 			This page updates on its own — you can leave it open.
 		</p>
@@ -221,4 +225,33 @@ templ ticketWaitingDetail(board Board, ticket sqlc.QueueTicket) {
 			to measure how long it takes.
 		</p>
 	}
+}
+
+// ticketLeaveForm lets a customer withdraw their own number.
+//
+// Without it, someone who changes their mind simply walks out, and their
+// number stays in the line until it is called to an empty room and marked
+// a no-show. That wastes a call, and — because everyone behind them is
+// counted as waiting behind a ticket nobody is holding — it inflates the
+// wait every other customer is shown.
+//
+// It posts a plain form rather than an htmx request so the handler can
+// answer with a redirect, leaving the customer on a URL that survives a
+// refresh. The confirmation step is the button's own wording rather than
+// a dialog: this is a phone in a waiting room, and a mis-tap should be
+// hard to make, not annoying to recover from.
+templ ticketLeaveForm(o sqlc.Organization, board Board, ticket sqlc.QueueTicket) {
+	<form
+		method="POST"
+		action={ templ.SafeURL(ticketCancelURL(o.Slug, board.Queue.Slug, db.UUIDString(ticket.ID))) }
+		class="mt-6 rounded-lg border border-slate-200 bg-white p-5 text-center"
+	>
+		<p class="text-sm text-slate-600">Changed your mind?</p>
+		<button type="submit" class="mt-3 w-full rounded-md border border-slate-300 px-4 py-2.5 text-sm font-medium text-slate-700 hover:bg-slate-50">
+			Leave the line
+		</button>
+		<p class="mt-3 text-xs text-slate-500">
+			Your number is given up for good — you would need a new one to rejoin.
+		</p>
+	</form>
 }

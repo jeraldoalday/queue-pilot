@@ -133,6 +133,10 @@ func (s *Server) Routes() http.Handler {
 	mux.Handle("POST /q/{orgSlug}/{queueSlug}/tickets", limitPublic(http.HandlerFunc(s.queue.PostPublicTicket)))
 	mux.HandleFunc("GET /q/{orgSlug}/{queueSlug}/t/{ticketID}", s.queue.GetPublicTicket)
 	mux.HandleFunc("GET /q/{orgSlug}/{queueSlug}/t/{ticketID}/status", s.queue.GetPublicTicketPartial)
+	// Leaving the line shares the join form's limit: both are writes a
+	// public page offers to someone with no session, and a script able to
+	// do either quickly is a script able to disrupt a business's morning.
+	mux.Handle("POST /q/{orgSlug}/{queueSlug}/t/{ticketID}/cancel", limitPublic(http.HandlerFunc(s.queue.PostPublicTicketCancel)))
 
 	// Wrapped outermost so a panic anywhere below — including inside
 	// another middleware — still becomes a logged 500 rather than a

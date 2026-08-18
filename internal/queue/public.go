@@ -147,6 +147,47 @@ func (h *Handlers) GetPublicTicket(w http.ResponseWriter, r *http.Request) {
 	render(w, r, PublicTicketPage(pc.orgRow, board, ticket))
 }
 
+// PostPublicTicketCancel withdraws a ticket on its holder's behalf.
+//
+// Like the join form this is an unauthenticated write with no CSRF token
+// to check, because a customer standing in a shop with a QR code has
+// neither a session nor a token. What stands in for one is the ticket's
+// own ID: a forged cross-site POST has to name the ticket it wants to
+// cancel, and that is a random UUID the attacker would already need to
+// hold — and anyone holding it can read the ticket page anyway. The
+// endpoint is rate limited alongside the join form so a script that
+// somehow harvested IDs still cannot clear a line quickly.
+//
+// It redirects to the ticket page rather than rendering, so the customer
+// lands on a URL they can refresh: the page then shows the cancelled
+// state from the database instead of re-posting the form.
+func (h *Handlers) PostPublicTicketCancel(w http.ResponseWriter, r *http.Request) {
+	pc, err := h.resolvePublic(r.Context(), r.PathValue("orgSlug"), r.PathValue("queueSlug"))
+	if err != nil {
+		h.publicError(w, r, err, "PostPublicTicketCancel")
+		return
+	}
+
+	ticketID := r.PathValue("ticketID")
+	_, err = CancelByCustomer(r.Context(), h.pool, db.UUIDString(pc.queue.ID), ticketID)
+	switch {
+	case err == nil, errors.Is(err, ErrNotCancellable):
+		// Already resolved, or a counter got there first. Either way the
+		// customer's next question is "so what is my ticket doing now",
+		// which the ticket page answers — showing them an error page for
+		// a number that has already moved on would be worse than showing
+		// them the number.
+	case errors.Is(err, pgx.ErrNoRows):
+		http.NotFound(w, r)
+		return
+	default:
+		h.fail(w, "PostPublicTicketCancel", err)
+		return
+	}
+
+	http.Redirect(w, r, ticketURL(pc.orgRow.Slug, pc.queue.Slug, ticketID), http.StatusSeeOther)
+}
+
 // GetPublicTicketPartial serves the ticket page's poll, so a customer
 // watching their phone sees their position fall without refreshing.
 func (h *Handlers) GetPublicTicketPartial(w http.ResponseWriter, r *http.Request) {

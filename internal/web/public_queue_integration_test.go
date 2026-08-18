@@ -4,6 +4,7 @@ package web
 
 import (
 	"context"
+	"html"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -328,5 +329,112 @@ func TestIntegrationAppRoutesRequireAuth(t *testing.T) {
 				t.Fatalf("anonymous GET %s redirected to %q, want /login", path, got)
 			}
 		})
+	}
+}
+
+// post sends an empty form without following the redirect, so a test can
+// read the Location the handler sets.
+func post(t *testing.T, srv *httptest.Server, path string) (int, string) {
+	t.Helper()
+
+	client := &http.Client{
+		CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse },
+	}
+	resp, err := client.PostForm(srv.URL+path, url.Values{})
+	if err != nil {
+		t.Fatalf("POST %s: %v", path, err)
+	}
+	defer resp.Body.Close()
+	io.Copy(io.Discard, resp.Body)
+
+	return resp.StatusCode, resp.Header.Get("Location")
+}
+
+// A customer who changes their mind leaves the line from their own page,
+// and everyone behind them moves up. The whole path is exercised through
+// the router because the scoping that makes it safe lives in the URL.
+func TestIntegrationCustomerCanLeaveTheLine(t *testing.T) {
+	srv := newTestServer(t)
+	tt := newTenant(t, srv, "Leave Line Org")
+
+	_, first := join(t, srv, tt.boardPath(), "Ada Lovelace")
+	_, second := join(t, srv, tt.boardPath(), "Grace Hopper")
+
+	// The second customer is behind the first: position 2.
+	if _, body := get(t, srv, second); !strings.Contains(body, "Your place in line") {
+		t.Fatal("the second ticket page did not show a place in line")
+	}
+
+	status, location := post(t, srv, first+"/cancel")
+	if status != http.StatusSeeOther {
+		t.Fatalf("cancel = %d, want 303 — it must redirect so a refresh doesn't re-post", status)
+	}
+	if location != first {
+		t.Fatalf("cancel redirected to %q, want the ticket page %q", location, first)
+	}
+
+	status, body := get(t, srv, first)
+	if status != http.StatusOK {
+		t.Fatalf("cancelled ticket page = %d, want 200", status)
+	}
+	if !strings.Contains(body, "cancelled") {
+		t.Error("the cancelled ticket page does not say the ticket was cancelled")
+	}
+	if strings.Contains(body, "Leave the line") {
+		t.Error("the cancelled ticket page still offers to leave the line")
+	}
+
+	// The point of the feature: the customer behind them has moved up, so
+	// the queue is no longer counting someone who has gone home. The body
+	// is unescaped first — templ escapes the apostrophe in "You're", and a
+	// test that matched the escaped form would be asserting on HTML
+	// encoding rather than on what the customer reads.
+	_, secondBody := get(t, srv, second)
+	if !strings.Contains(html.UnescapeString(secondBody), "You're next") {
+		t.Error("the customer behind did not move up after the cancellation")
+	}
+}
+
+// The cancel endpoint is a write on a public URL, so it must obey the
+// same tenant scoping every other public read does.
+func TestIntegrationCancelIsScopedToItsQueue(t *testing.T) {
+	srv := newTestServer(t)
+	orgA := newTenant(t, srv, "Cancel Org A")
+	orgB := newTenant(t, srv, "Cancel Org B")
+
+	_, location := join(t, srv, orgA.boardPath(), "Ada")
+	ticketID := location[strings.LastIndex(location, "/")+1:]
+
+	status, _ := post(t, srv, orgB.boardPath()+"/t/"+ticketID+"/cancel")
+	if status != http.StatusNotFound {
+		t.Fatalf("org B cancelling org A's ticket = %d, want 404", status)
+	}
+
+	// And org A's customer is still in line, so the 404 above stopped the
+	// write rather than merely hiding its result.
+	_, body := get(t, srv, location)
+	if !strings.Contains(body, "Your place in line") {
+		t.Fatal("org A's ticket was affected by org B's cancel attempt")
+	}
+}
+
+// Cancelling twice — a double tap, or a back button followed by another
+// submit — must land the customer back on their ticket rather than on an
+// error page. The state they end up in is the same either way.
+func TestIntegrationCancelIsIdempotentForTheCustomer(t *testing.T) {
+	srv := newTestServer(t)
+	tt := newTenant(t, srv, "Double Cancel Org")
+
+	_, location := join(t, srv, tt.boardPath(), "Ada")
+
+	for i := 0; i < 2; i++ {
+		if status, _ := post(t, srv, location+"/cancel"); status != http.StatusSeeOther {
+			t.Fatalf("cancel attempt %d = %d, want 303", i+1, status)
+		}
+	}
+
+	_, body := get(t, srv, location)
+	if !strings.Contains(body, "cancelled") {
+		t.Error("the ticket is not cancelled after two cancel requests")
 	}
 }
