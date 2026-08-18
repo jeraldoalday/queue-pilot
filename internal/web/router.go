@@ -13,6 +13,7 @@ import (
 	"github.com/jeraldoalday/queuepilot/internal/catalog"
 	"github.com/jeraldoalday/queuepilot/internal/config"
 	sqlcgen "github.com/jeraldoalday/queuepilot/internal/db/sqlc"
+	"github.com/jeraldoalday/queuepilot/internal/org"
 	"github.com/jeraldoalday/queuepilot/internal/platform/clock"
 	"github.com/jeraldoalday/queuepilot/internal/platform/ratelimit"
 	"github.com/jeraldoalday/queuepilot/internal/queue"
@@ -30,6 +31,7 @@ type Server struct {
 	catalog      *catalog.Handlers
 	availability *availability.Handlers
 	appointment  *appointment.Handlers
+	org          *org.Handlers
 	queue        *queue.Handlers
 	publicLimit  *ratelimit.Limiter
 }
@@ -46,6 +48,7 @@ func NewServer(cfg config.Config, log *slog.Logger, pool *pgxpool.Pool) *Server 
 		catalog:      catalog.NewHandlers(pool, log),
 		availability: availability.NewHandlers(pool, log),
 		appointment:  appointment.NewHandlers(pool, log),
+		org:          org.NewHandlers(pool, log),
 		queue:        queue.NewHandlers(pool, log),
 		publicLimit:  ratelimit.New(publicBurst, publicInterval, clock.Real{}),
 	}
@@ -81,6 +84,11 @@ func (s *Server) Routes() http.Handler {
 
 	mux.Handle("POST /logout", requireAuth(auth.RequireCSRF(http.HandlerFunc(s.auth.PostLogout))))
 	mux.Handle("GET /app", requireAuth(http.HandlerFunc(s.handleAppHome)))
+	// Settings are org configuration, so admin-only — and the timezone in
+	// particular decides when every queue's day rolls over.
+	mux.Handle("GET /app/settings", requireAuth(requireAdmin(http.HandlerFunc(s.org.GetSettings))))
+	mux.Handle("POST /app/settings", requireAuth(requireAdmin(auth.RequireCSRF(http.HandlerFunc(s.org.PostSettings)))))
+
 	mux.Handle("GET /app/staff", requireAuth(requireAdmin(http.HandlerFunc(s.auth.GetStaffList))))
 	mux.Handle("GET /app/staff/new", requireAuth(requireAdmin(http.HandlerFunc(s.auth.GetNewStaff))))
 	mux.Handle("POST /app/staff", requireAuth(requireAdmin(auth.RequireCSRF(http.HandlerFunc(s.auth.PostNewStaff)))))

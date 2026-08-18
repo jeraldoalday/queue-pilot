@@ -92,3 +92,36 @@ func (q *Queries) GetOrganizationBySlug(ctx context.Context, slug string) (Organ
 	)
 	return i, err
 }
+
+const updateOrganization = `-- name: UpdateOrganization :one
+UPDATE organizations
+SET name = $1,
+    timezone = $2,
+    updated_at = now()
+WHERE id = $3
+RETURNING id, name, slug, timezone, plan, created_at, updated_at
+`
+
+type UpdateOrganizationParams struct {
+	Name     string      `json:"name"`
+	Timezone string      `json:"timezone"`
+	ID       pgtype.UUID `json:"id"`
+}
+
+// The slug is deliberately not updatable. It is printed on QR codes stuck
+// to a counter and bookmarked by customers, so a business fixing a typo in
+// its name must not break every board URL it has handed out.
+func (q *Queries) UpdateOrganization(ctx context.Context, arg UpdateOrganizationParams) (Organization, error) {
+	row := q.db.QueryRow(ctx, updateOrganization, arg.Name, arg.Timezone, arg.ID)
+	var i Organization
+	err := row.Scan(
+		&i.ID,
+		&i.Name,
+		&i.Slug,
+		&i.Timezone,
+		&i.Plan,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}

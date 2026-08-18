@@ -1,0 +1,107 @@
+package org
+
+import (
+	"time"
+
+	"github.com/jeraldoalday/queuepilot/internal/db/sqlc"
+	"github.com/jeraldoalday/queuepilot/internal/web/components"
+)
+
+templ SettingsPage(o sqlc.Organization, now time.Time, errMsg, okMsg, csrfToken string) {
+	@components.Layout("Settings") {
+		<main class="mx-auto max-w-2xl px-6 py-10">
+			<p class="mb-4"><a href="/app" class="text-sm text-slate-600 underline">&larr; Dashboard</a></p>
+			<h1 class="text-2xl font-semibold tracking-tight">Organisation settings</h1>
+			<div id="org-settings" class="mt-6">
+				@SettingsForm(o, now, errMsg, okMsg, csrfToken)
+			</div>
+		</main>
+	}
+}
+
+// SettingsForm is swapped in on its own after a save, so a rejected
+// timezone comes back with the value still in the field rather than
+// clearing the form someone just filled in.
+templ SettingsForm(o sqlc.Organization, now time.Time, errMsg, okMsg, csrfToken string) {
+	<form
+		hx-post="/app/settings"
+		hx-target="#org-settings"
+		hx-swap="innerHTML"
+		class="rounded-lg border border-slate-200 bg-white p-6"
+	>
+		<input type="hidden" name="csrf_token" value={ csrfToken }/>
+		if errMsg != "" {
+			<p class="mb-4 rounded-md bg-red-50 px-3 py-2 text-sm text-red-700">{ errMsg }</p>
+		}
+		if okMsg != "" {
+			<p class="mb-4 rounded-md bg-green-50 px-3 py-2 text-sm text-green-700">{ okMsg }</p>
+		}
+
+		<div>
+			<label for="name" class="block text-xs font-medium text-slate-700">Name</label>
+			<input
+				id="name"
+				name="name"
+				type="text"
+				required
+				maxlength="100"
+				value={ o.Name }
+				class="mt-1 block w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
+			/>
+			<p class="mt-1 text-xs text-slate-500">
+				Customers see this above the now-serving number on every public board.
+			</p>
+		</div>
+
+		<div class="mt-5">
+			<label for="timezone" class="block text-xs font-medium text-slate-700">Timezone</label>
+			<input
+				id="timezone"
+				name="timezone"
+				type="text"
+				required
+				list="timezone-options"
+				value={ o.Timezone }
+				class="mt-1 block w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
+			/>
+			<datalist id="timezone-options">
+				for _, tz := range CommonTimezones() {
+					<option value={ tz }></option>
+				}
+			</datalist>
+			@timezoneHint(o.Timezone, now)
+		</div>
+
+		<button type="submit" class="mt-6 rounded-md bg-slate-900 px-4 py-2.5 text-sm font-medium text-white hover:bg-slate-700">
+			Save settings
+		</button>
+	</form>
+
+	<div class="mt-6 rounded-lg border border-slate-200 bg-slate-50 p-6">
+		<h2 class="text-sm font-medium">Public address</h2>
+		<p class="mt-2 text-sm text-slate-600">
+			Your queues are published under <code class="rounded bg-white px-1.5 py-0.5 text-xs">/q/{ o.Slug }/</code>.
+		</p>
+		<p class="mt-2 text-xs text-slate-500">
+			This part of the address is fixed. It is printed on whatever QR codes
+			and signs you have already put up, so renaming the organisation
+			deliberately leaves it alone rather than breaking every board link
+			you have handed out.
+		</p>
+	</div>
+}
+
+// timezoneHint spells out what the stored zone means right now. A zone
+// name is not something most people can check at a glance, whereas the
+// current local time next to the clock on their desk is.
+templ timezoneHint(tz string, now time.Time) {
+	<p class="mt-1 text-xs text-slate-500">
+		if local, offset, ok := describeZone(tz, now); ok {
+			It is <span class="font-medium">{ local }</span> there now (UTC{ offset }).
+			Ticket numbers restart, and every report's day begins, at midnight in this zone.
+		} else {
+			Name a zone such as Europe/London or Asia/Manila — not an abbreviation
+			like PST, and not a fixed offset, since neither carries daylight-saving rules.
+		}
+	</p>
+}

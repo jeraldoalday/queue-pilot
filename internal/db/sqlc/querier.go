@@ -90,6 +90,10 @@ type Querier interface {
 	// outcome — a cancellation could overwrite a completion. The loser now
 	// updates no rows and is reported as a conflict.
 	UpdateAppointmentStatus(ctx context.Context, arg UpdateAppointmentStatusParams) (Appointment, error)
+	// The slug is deliberately not updatable. It is printed on QR codes stuck
+	// to a counter and bookmarked by customers, so a business fixing a typo in
+	// its name must not break every board URL it has handed out.
+	UpdateOrganization(ctx context.Context, arg UpdateOrganizationParams) (Organization, error)
 	UpdateQueue(ctx context.Context, arg UpdateQueueParams) (Queue, error)
 	UpdateService(ctx context.Context, arg UpdateServiceParams) (Service, error)
 	// Stamps the timestamp that matches the new status, so the lifecycle
