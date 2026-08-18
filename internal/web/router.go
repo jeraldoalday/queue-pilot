@@ -135,7 +135,10 @@ func (s *Server) Routes() http.Handler {
 	mux.HandleFunc("GET /q/{orgSlug}/{queueSlug}/t/{ticketID}", s.queue.GetPublicTicket)
 	mux.HandleFunc("GET /q/{orgSlug}/{queueSlug}/t/{ticketID}/status", s.queue.GetPublicTicketPartial)
 
-	return mux
+	// Wrapped outermost so a panic anywhere below — including inside
+	// another middleware — still becomes a logged 500 rather than a
+	// dropped connection.
+	return RecoverPanic(s.log)(mux)
 }
 
 // handleHealthz reports readiness, including DB connectivity, so an
