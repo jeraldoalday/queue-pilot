@@ -123,6 +123,50 @@ func (q *Queries) GetServiceBySlug(ctx context.Context, arg GetServiceBySlugPara
 	return i, err
 }
 
+const listBookableServicesByOrg = `-- name: ListBookableServicesByOrg :many
+SELECT DISTINCT s.id, s.org_id, s.slug, s.name, s.description, s.duration_minutes, s.price_cents, s.active, s.created_at, s.updated_at
+FROM services s
+JOIN staff_services ss ON ss.service_id = s.id
+JOIN users u ON u.id = ss.staff_user_id AND u.disabled_at IS NULL
+WHERE s.org_id = $1 AND s.active
+ORDER BY s.name
+`
+
+// The services a customer may book themselves: active, and performed by
+// at least one staff member. A service nobody is assigned to generates no
+// slots at all, so listing it publicly offers a booking that can only end
+// in an empty page.
+func (q *Queries) ListBookableServicesByOrg(ctx context.Context, orgID pgtype.UUID) ([]Service, error) {
+	rows, err := q.db.Query(ctx, listBookableServicesByOrg, orgID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []Service{}
+	for rows.Next() {
+		var i Service
+		if err := rows.Scan(
+			&i.ID,
+			&i.OrgID,
+			&i.Slug,
+			&i.Name,
+			&i.Description,
+			&i.DurationMinutes,
+			&i.PriceCents,
+			&i.Active,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listServicesByOrg = `-- name: ListServicesByOrg :many
 SELECT id, org_id, slug, name, description, duration_minutes, price_cents, active, created_at, updated_at FROM services WHERE org_id = $1 ORDER BY name
 `

@@ -53,6 +53,11 @@ type Querier interface {
 	// tell a revoked login from a current one.
 	DeleteSessionsForUser(ctx context.Context, userID pgtype.UUID) (int64, error)
 	GetAppointment(ctx context.Context, arg GetAppointmentParams) (Appointment, error)
+	// One appointment with the service and staff names a customer needs to
+	// recognise it. The confirmation page is shown to someone who has no
+	// session and no other view of the booking, so "10:00 with Dana for a
+	// trim" has to come out of one query rather than three.
+	GetAppointmentWithNames(ctx context.Context, arg GetAppointmentWithNamesParams) (GetAppointmentWithNamesRow, error)
 	GetOrganizationByID(ctx context.Context, id pgtype.UUID) (Organization, error)
 	GetOrganizationBySlug(ctx context.Context, slug string) (Organization, error)
 	GetQueue(ctx context.Context, arg GetQueueParams) (Queue, error)
@@ -69,9 +74,20 @@ type Querier interface {
 	GetUserByID(ctx context.Context, arg GetUserByIDParams) (User, error)
 	IsStaffAssignedToService(ctx context.Context, arg IsStaffAssignedToServiceParams) (bool, error)
 	ListActiveQueuesByOrg(ctx context.Context, orgID pgtype.UUID) ([]Queue, error)
+	// The staff a public booking may be assigned to. It differs from
+	// ListStaffForService by excluding suspended accounts: the admin page
+	// shows every assignment so it can be edited, while offering a customer a
+	// slot with someone who has left the business books an appointment nobody
+	// will keep.
+	ListActiveStaffForService(ctx context.Context, arg ListActiveStaffForServiceParams) ([]ListActiveStaffForServiceRow, error)
 	ListAppointmentsForOrgOnDay(ctx context.Context, arg ListAppointmentsForOrgOnDayParams) ([]ListAppointmentsForOrgOnDayRow, error)
 	ListAppointmentsForStaffOnDay(ctx context.Context, arg ListAppointmentsForStaffOnDayParams) ([]Appointment, error)
 	ListAvailabilityByStaff(ctx context.Context, arg ListAvailabilityByStaffParams) ([]StaffAvailability, error)
+	// The services a customer may book themselves: active, and performed by
+	// at least one staff member. A service nobody is assigned to generates no
+	// slots at all, so listing it publicly offers a booking that can only end
+	// in an empty page.
+	ListBookableServicesByOrg(ctx context.Context, orgID pgtype.UUID) ([]Service, error)
 	// "Open" is everything still in play: waiting, called, or being served.
 	// The board and the console both show exactly this set.
 	ListOpenTicketsForQueueOnDate(ctx context.Context, arg ListOpenTicketsForQueueOnDateParams) ([]QueueTicket, error)

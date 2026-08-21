@@ -48,6 +48,50 @@ func (q *Queries) IsStaffAssignedToService(ctx context.Context, arg IsStaffAssig
 	return exists, err
 }
 
+const listActiveStaffForService = `-- name: ListActiveStaffForService :many
+SELECT u.id, u.name, u.email
+FROM staff_services ss
+JOIN users u ON u.id = ss.staff_user_id
+WHERE ss.service_id = $1 AND ss.org_id = $2 AND u.disabled_at IS NULL
+ORDER BY u.name
+`
+
+type ListActiveStaffForServiceParams struct {
+	ServiceID pgtype.UUID `json:"service_id"`
+	OrgID     pgtype.UUID `json:"org_id"`
+}
+
+type ListActiveStaffForServiceRow struct {
+	ID    pgtype.UUID `json:"id"`
+	Name  string      `json:"name"`
+	Email string      `json:"email"`
+}
+
+// The staff a public booking may be assigned to. It differs from
+// ListStaffForService by excluding suspended accounts: the admin page
+// shows every assignment so it can be edited, while offering a customer a
+// slot with someone who has left the business books an appointment nobody
+// will keep.
+func (q *Queries) ListActiveStaffForService(ctx context.Context, arg ListActiveStaffForServiceParams) ([]ListActiveStaffForServiceRow, error) {
+	rows, err := q.db.Query(ctx, listActiveStaffForService, arg.ServiceID, arg.OrgID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListActiveStaffForServiceRow{}
+	for rows.Next() {
+		var i ListActiveStaffForServiceRow
+		if err := rows.Scan(&i.ID, &i.Name, &i.Email); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listStaffForService = `-- name: ListStaffForService :many
 SELECT u.id, u.name, u.email
 FROM staff_services ss

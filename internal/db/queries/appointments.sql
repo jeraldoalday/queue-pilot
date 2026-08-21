@@ -19,6 +19,22 @@ WHERE org_id = sqlc.arg(org_id)
   AND starts_at < sqlc.arg(day_end)
 ORDER BY starts_at;
 
+-- name: GetAppointmentWithNames :one
+-- One appointment with the service and staff names a customer needs to
+-- recognise it. The confirmation page is shown to someone who has no
+-- session and no other view of the booking, so "10:00 with Dana for a
+-- trim" has to come out of one query rather than three.
+SELECT
+    a.id, a.org_id, a.service_id, a.staff_user_id,
+    a.customer_name, a.customer_email, a.customer_phone,
+    a.starts_at, a.ends_at, a.status, a.created_at, a.updated_at,
+    s.name AS service_name,
+    u.name AS staff_name
+FROM appointments a
+JOIN services s ON s.id = a.service_id
+JOIN users u ON u.id = a.staff_user_id
+WHERE a.id = sqlc.arg(id) AND a.org_id = sqlc.arg(org_id);
+
 -- name: ListAppointmentsForOrgOnDay :many
 SELECT
     a.id, a.org_id, a.service_id, a.staff_user_id,

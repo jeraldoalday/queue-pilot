@@ -13,6 +13,18 @@ JOIN users u ON u.id = ss.staff_user_id
 WHERE ss.service_id = $1 AND ss.org_id = $2
 ORDER BY u.name;
 
+-- name: ListActiveStaffForService :many
+-- The staff a public booking may be assigned to. It differs from
+-- ListStaffForService by excluding suspended accounts: the admin page
+-- shows every assignment so it can be edited, while offering a customer a
+-- slot with someone who has left the business books an appointment nobody
+-- will keep.
+SELECT u.id, u.name, u.email
+FROM staff_services ss
+JOIN users u ON u.id = ss.staff_user_id
+WHERE ss.service_id = $1 AND ss.org_id = $2 AND u.disabled_at IS NULL
+ORDER BY u.name;
+
 -- name: ListStaffServiceAssignmentsByOrg :many
 SELECT staff_user_id, service_id FROM staff_services WHERE org_id = $1;
 

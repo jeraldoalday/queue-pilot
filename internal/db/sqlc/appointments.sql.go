@@ -125,6 +125,67 @@ func (q *Queries) GetAppointment(ctx context.Context, arg GetAppointmentParams) 
 	return i, err
 }
 
+const getAppointmentWithNames = `-- name: GetAppointmentWithNames :one
+SELECT
+    a.id, a.org_id, a.service_id, a.staff_user_id,
+    a.customer_name, a.customer_email, a.customer_phone,
+    a.starts_at, a.ends_at, a.status, a.created_at, a.updated_at,
+    s.name AS service_name,
+    u.name AS staff_name
+FROM appointments a
+JOIN services s ON s.id = a.service_id
+JOIN users u ON u.id = a.staff_user_id
+WHERE a.id = $1 AND a.org_id = $2
+`
+
+type GetAppointmentWithNamesParams struct {
+	ID    pgtype.UUID `json:"id"`
+	OrgID pgtype.UUID `json:"org_id"`
+}
+
+type GetAppointmentWithNamesRow struct {
+	ID            pgtype.UUID        `json:"id"`
+	OrgID         pgtype.UUID        `json:"org_id"`
+	ServiceID     pgtype.UUID        `json:"service_id"`
+	StaffUserID   pgtype.UUID        `json:"staff_user_id"`
+	CustomerName  string             `json:"customer_name"`
+	CustomerEmail string             `json:"customer_email"`
+	CustomerPhone pgtype.Text        `json:"customer_phone"`
+	StartsAt      pgtype.Timestamptz `json:"starts_at"`
+	EndsAt        pgtype.Timestamptz `json:"ends_at"`
+	Status        string             `json:"status"`
+	CreatedAt     pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt     pgtype.Timestamptz `json:"updated_at"`
+	ServiceName   string             `json:"service_name"`
+	StaffName     string             `json:"staff_name"`
+}
+
+// One appointment with the service and staff names a customer needs to
+// recognise it. The confirmation page is shown to someone who has no
+// session and no other view of the booking, so "10:00 with Dana for a
+// trim" has to come out of one query rather than three.
+func (q *Queries) GetAppointmentWithNames(ctx context.Context, arg GetAppointmentWithNamesParams) (GetAppointmentWithNamesRow, error) {
+	row := q.db.QueryRow(ctx, getAppointmentWithNames, arg.ID, arg.OrgID)
+	var i GetAppointmentWithNamesRow
+	err := row.Scan(
+		&i.ID,
+		&i.OrgID,
+		&i.ServiceID,
+		&i.StaffUserID,
+		&i.CustomerName,
+		&i.CustomerEmail,
+		&i.CustomerPhone,
+		&i.StartsAt,
+		&i.EndsAt,
+		&i.Status,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.ServiceName,
+		&i.StaffName,
+	)
+	return i, err
+}
+
 const listAppointmentsForOrgOnDay = `-- name: ListAppointmentsForOrgOnDay :many
 SELECT
     a.id, a.org_id, a.service_id, a.staff_user_id,
