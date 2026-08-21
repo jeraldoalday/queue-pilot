@@ -17,7 +17,11 @@ ORDER BY u.name;
 SELECT staff_user_id, service_id FROM staff_services WHERE org_id = $1;
 
 -- name: ListStaffUsersByOrg :many
-SELECT id, name, email FROM users WHERE org_id = $1 AND role = 'staff' ORDER BY name;
+-- disabled_at comes back with the row because the staff page has to show
+-- which accounts are suspended: a list that renders a disabled account
+-- identically to an active one invites an admin to keep waiting for a
+-- login that will never work.
+SELECT id, name, email, disabled_at FROM users WHERE org_id = $1 AND role = 'staff' ORDER BY name;
 
 -- name: IsStaffAssignedToService :one
 SELECT EXISTS(

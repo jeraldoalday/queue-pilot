@@ -96,3 +96,43 @@ func (q *Queries) GetUserByID(ctx context.Context, arg GetUserByIDParams) (User,
 	)
 	return i, err
 }
+
+const setUserDisabled = `-- name: SetUserDisabled :one
+UPDATE users
+SET disabled_at = CASE WHEN $1::boolean THEN now() ELSE NULL END,
+    updated_at = now()
+WHERE id = $2
+  AND org_id = $3
+  AND role = 'staff'
+RETURNING id, org_id, email, name, password_hash, role, disabled_at, created_at, updated_at
+`
+
+type SetUserDisabledParams struct {
+	Disabled bool        `json:"disabled"`
+	ID       pgtype.UUID `json:"id"`
+	OrgID    pgtype.UUID `json:"org_id"`
+}
+
+// Disables or re-enables one staff account.
+//
+// The role filter is the safety rail: this statement can only ever touch
+// a row whose role is 'staff', so the admin route built on it cannot lock
+// an organisation out of its own account, not by an admin disabling
+// themselves, and not by one admin disabling another. Enforcing that here
+// rather than in the handler means every future caller inherits it.
+func (q *Queries) SetUserDisabled(ctx context.Context, arg SetUserDisabledParams) (User, error) {
+	row := q.db.QueryRow(ctx, setUserDisabled, arg.Disabled, arg.ID, arg.OrgID)
+	var i User
+	err := row.Scan(
+		&i.ID,
+		&i.OrgID,
+		&i.Email,
+		&i.Name,
+		&i.PasswordHash,
+		&i.Role,
+		&i.DisabledAt,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}

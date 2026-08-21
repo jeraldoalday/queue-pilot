@@ -92,13 +92,14 @@ func (h *Handlers) GetStaffList(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	ident, _ := CurrentIdentity(r.Context())
 	staff, err := ListStaff(r.Context(), h.pool, orgID)
 	if err != nil {
 		h.log.Error("GetStaffList", "error", err)
 		http.Error(w, "internal error", http.StatusInternalServerError)
 		return
 	}
-	render(w, r, StaffListPage(staff))
+	render(w, r, StaffListPage(staff, ident.CSRFToken))
 }
 
 func (h *Handlers) GetNewStaff(w http.ResponseWriter, r *http.Request) {
@@ -127,6 +128,55 @@ func (h *Handlers) PostNewStaff(w http.ResponseWriter, r *http.Request) {
 	}
 
 	http.Redirect(w, r, "/app", http.StatusSeeOther)
+}
+
+// PostStaffDisabled suspends or restores one staff account and re-renders
+// the staff list, so the row's state and the button offered on it always
+// agree.
+//
+// The desired state arrives as an explicit "disabled" field rather than
+// being toggled from what the server currently holds. A toggle sent twice
+// — a double-tapped button, a retried request — lands back where it
+// started, and the second click's outcome depends on whether the first
+// one's response was ever seen. Naming the target state makes the request
+// idempotent: asking twice for "disabled" leaves the account disabled.
+func (h *Handlers) PostStaffDisabled(w http.ResponseWriter, r *http.Request) {
+	orgID, err := tenant.RequireOrgID(r.Context())
+	if err != nil {
+		http.Error(w, "forbidden", http.StatusForbidden)
+		return
+	}
+
+	staffID := r.PathValue("staffID")
+	disabled := r.FormValue("disabled") == "true"
+
+	if _, err := SetStaffDisabled(r.Context(), h.pool, orgID, staffID, disabled); err != nil {
+		if errors.Is(err, ErrStaffNotFound) {
+			// Includes an admin's own ID: the query only matches staff
+			// rows, so an admin cannot suspend themselves or a colleague
+			// by hand-editing the form. That reads as "no such staff
+			// account" rather than as a special-cased refusal.
+			http.NotFound(w, r)
+			return
+		}
+		h.log.Error("PostStaffDisabled", "error", err, "staff_user_id", staffID)
+		http.Error(w, "internal error", http.StatusInternalServerError)
+		return
+	}
+
+	h.renderStaffList(w, r, orgID)
+}
+
+func (h *Handlers) renderStaffList(w http.ResponseWriter, r *http.Request, orgID string) {
+	ident, _ := CurrentIdentity(r.Context())
+
+	staff, err := ListStaff(r.Context(), h.pool, orgID)
+	if err != nil {
+		h.log.Error("renderStaffList", "error", err)
+		http.Error(w, "internal error", http.StatusInternalServerError)
+		return
+	}
+	render(w, r, StaffTable(staff, ident.CSRFToken))
 }
 
 // userFacingError returns a message safe to show the user, logging

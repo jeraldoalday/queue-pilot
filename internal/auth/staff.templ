@@ -6,34 +6,82 @@ import (
 	"github.com/jeraldoalday/queuepilot/internal/web/components"
 )
 
-templ StaffListPage(staff []sqlc.ListStaffUsersByOrgRow) {
+templ StaffListPage(staff []sqlc.ListStaffUsersByOrgRow, csrfToken string) {
 	@components.Layout("Staff") {
-		<main class="mx-auto max-w-2xl px-6 py-16">
+		<main class="mx-auto max-w-3xl px-6 py-16">
 			<p class="mb-4"><a href="/app" class="text-sm text-slate-600 underline">&larr; Dashboard</a></p>
 			<div class="flex items-center justify-between">
 				<h1 class="text-2xl font-semibold tracking-tight">Staff</h1>
 				<a href="/app/staff/new" class="text-sm font-medium text-slate-900 underline">Add a staff member</a>
 			</div>
-			if len(staff) == 0 {
-				<p class="mt-6 text-sm text-slate-500">No staff members yet.</p>
-			}
-			<table class="mt-6 w-full border-collapse text-sm">
-				<tbody>
-					for _, st := range staff {
-						<tr class="border-b border-slate-100">
-							<td class="py-2 pr-4 font-medium">{ st.Name }</td>
-							<td class="py-2 pr-4 text-slate-500">{ st.Email }</td>
-							<td class="py-2 text-right">
-								<a href={ templ.SafeURL("/app/staff/" + db.UUIDString(st.ID) + "/availability") } class="text-slate-600 underline">
-									Manage availability
-								</a>
-							</td>
-						</tr>
-					}
-				</tbody>
-			</table>
+			@StaffTable(staff, csrfToken)
+			<p class="mt-6 text-xs text-slate-500">
+				Suspending an account signs it out everywhere and blocks it from
+				signing back in. Nothing it did is removed: past appointments and
+				the tickets it called stay on the record, which is why there is no
+				delete here.
+			</p>
 		</main>
 	}
+}
+
+// StaffTable is its own component because it is what the suspend and
+// restore buttons swap in place — the page around it does not need to be
+// re-rendered to change one row's state.
+templ StaffTable(staff []sqlc.ListStaffUsersByOrgRow, csrfToken string) {
+	<div id="staff-table">
+		if len(staff) == 0 {
+			<p class="mt-6 text-sm text-slate-500">No staff members yet.</p>
+		}
+		<table class="mt-6 w-full border-collapse text-sm">
+			<tbody>
+				for _, st := range staff {
+					<tr class="border-b border-slate-100">
+						<td class="py-2 pr-4 font-medium">
+							{ st.Name }
+							if st.DisabledAt.Valid {
+								<span class="ml-2 rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-800">Suspended</span>
+							}
+						</td>
+						<td class="py-2 pr-4 text-slate-500">{ st.Email }</td>
+						<td class="py-2 pr-4 text-right">
+							<a href={ templ.SafeURL("/app/staff/" + db.UUIDString(st.ID) + "/availability") } class="text-slate-600 underline">
+								Manage availability
+							</a>
+						</td>
+						<td class="py-2 text-right">
+							@staffAccessButton(st, csrfToken)
+						</td>
+					</tr>
+				}
+			</tbody>
+		</table>
+	</div>
+}
+
+// staffAccessButton posts the state the account should end up in, not a
+// toggle: a double-tapped button then leaves the account where the admin
+// meant it to be rather than back where it started.
+templ staffAccessButton(st sqlc.ListStaffUsersByOrgRow, csrfToken string) {
+	<form
+		hx-post={ "/app/staff/" + db.UUIDString(st.ID) + "/access" }
+		hx-target="#staff-table"
+		hx-swap="outerHTML"
+		class="inline"
+	>
+		<input type="hidden" name="csrf_token" value={ csrfToken }/>
+		if st.DisabledAt.Valid {
+			<input type="hidden" name="disabled" value="false"/>
+			<button type="submit" class="rounded-md border border-slate-300 px-2 py-1 text-xs font-medium text-slate-700 hover:bg-slate-50">
+				Restore access
+			</button>
+		} else {
+			<input type="hidden" name="disabled" value="true"/>
+			<button type="submit" class="rounded-md border border-amber-300 px-2 py-1 text-xs font-medium text-amber-800 hover:bg-amber-50">
+				Suspend
+			</button>
+		}
+	</form>
 }
 
 templ NewStaffPage(errMsg, csrfToken string) {

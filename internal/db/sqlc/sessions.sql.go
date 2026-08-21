@@ -76,6 +76,25 @@ func (q *Queries) DeleteSession(ctx context.Context, token string) error {
 	return err
 }
 
+const deleteSessionsForUser = `-- name: DeleteSessionsForUser :execrows
+DELETE FROM sessions WHERE user_id = $1
+`
+
+// Revokes every session one user holds, in one statement.
+//
+// Session lookup already refuses a disabled user's token, so this is not
+// what makes disabling take effect — it is what makes it take effect
+// *tidily*. A suspended account otherwise leaves live rows behind that
+// authenticate nobody, and an admin reading the sessions table cannot
+// tell a revoked login from a current one.
+func (q *Queries) DeleteSessionsForUser(ctx context.Context, userID pgtype.UUID) (int64, error) {
+	result, err := q.db.Exec(ctx, deleteSessionsForUser, userID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
 const getSessionWithUser = `-- name: GetSessionWithUser :one
 SELECT
     s.token        AS session_token,

@@ -117,15 +117,20 @@ func (q *Queries) ListStaffServiceAssignmentsByOrg(ctx context.Context, orgID pg
 }
 
 const listStaffUsersByOrg = `-- name: ListStaffUsersByOrg :many
-SELECT id, name, email FROM users WHERE org_id = $1 AND role = 'staff' ORDER BY name
+SELECT id, name, email, disabled_at FROM users WHERE org_id = $1 AND role = 'staff' ORDER BY name
 `
 
 type ListStaffUsersByOrgRow struct {
-	ID    pgtype.UUID `json:"id"`
-	Name  string      `json:"name"`
-	Email string      `json:"email"`
+	ID         pgtype.UUID        `json:"id"`
+	Name       string             `json:"name"`
+	Email      string             `json:"email"`
+	DisabledAt pgtype.Timestamptz `json:"disabled_at"`
 }
 
+// disabled_at comes back with the row because the staff page has to show
+// which accounts are suspended: a list that renders a disabled account
+// identically to an active one invites an admin to keep waiting for a
+// login that will never work.
 func (q *Queries) ListStaffUsersByOrg(ctx context.Context, orgID pgtype.UUID) ([]ListStaffUsersByOrgRow, error) {
 	rows, err := q.db.Query(ctx, listStaffUsersByOrg, orgID)
 	if err != nil {
@@ -135,7 +140,12 @@ func (q *Queries) ListStaffUsersByOrg(ctx context.Context, orgID pgtype.UUID) ([
 	items := []ListStaffUsersByOrgRow{}
 	for rows.Next() {
 		var i ListStaffUsersByOrgRow
-		if err := rows.Scan(&i.ID, &i.Name, &i.Email); err != nil {
+		if err := rows.Scan(
+			&i.ID,
+			&i.Name,
+			&i.Email,
+			&i.DisabledAt,
+		); err != nil {
 			return nil, err
 		}
 		items = append(items, i)

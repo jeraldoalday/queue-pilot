@@ -29,3 +29,13 @@ WHERE s.token = $1;
 -- Get treats an expired row as absent, so without this the table only ever
 -- grows, one row per login, forever.
 DELETE FROM sessions WHERE expires_at < now();
+
+-- name: DeleteSessionsForUser :execrows
+-- Revokes every session one user holds, in one statement.
+--
+-- Session lookup already refuses a disabled user's token, so this is not
+-- what makes disabling take effect — it is what makes it take effect
+-- *tidily*. A suspended account otherwise leaves live rows behind that
+-- authenticate nobody, and an admin reading the sessions table cannot
+-- tell a revoked login from a current one.
+DELETE FROM sessions WHERE user_id = $1;

@@ -44,6 +44,14 @@ type Querier interface {
 	DeleteQueue(ctx context.Context, arg DeleteQueueParams) error
 	DeleteService(ctx context.Context, arg DeleteServiceParams) error
 	DeleteSession(ctx context.Context, token string) error
+	// Revokes every session one user holds, in one statement.
+	//
+	// Session lookup already refuses a disabled user's token, so this is not
+	// what makes disabling take effect — it is what makes it take effect
+	// *tidily*. A suspended account otherwise leaves live rows behind that
+	// authenticate nobody, and an admin reading the sessions table cannot
+	// tell a revoked login from a current one.
+	DeleteSessionsForUser(ctx context.Context, userID pgtype.UUID) (int64, error)
 	GetAppointment(ctx context.Context, arg GetAppointmentParams) (Appointment, error)
 	GetOrganizationByID(ctx context.Context, id pgtype.UUID) (Organization, error)
 	GetOrganizationBySlug(ctx context.Context, slug string) (Organization, error)
@@ -71,6 +79,10 @@ type Querier interface {
 	ListServicesByOrg(ctx context.Context, orgID pgtype.UUID) ([]Service, error)
 	ListStaffForService(ctx context.Context, arg ListStaffForServiceParams) ([]ListStaffForServiceRow, error)
 	ListStaffServiceAssignmentsByOrg(ctx context.Context, orgID pgtype.UUID) ([]ListStaffServiceAssignmentsByOrgRow, error)
+	// disabled_at comes back with the row because the staff page has to show
+	// which accounts are suspended: a list that renders a disabled account
+	// identically to an active one invites an admin to keep waiting for a
+	// login that will never work.
 	ListStaffUsersByOrg(ctx context.Context, orgID pgtype.UUID) ([]ListStaffUsersByOrgRow, error)
 	ListTicketsForQueueOnDate(ctx context.Context, arg ListTicketsForQueueOnDateParams) ([]QueueTicket, error)
 	// Claims the lowest-numbered waiting ticket for the caller's transaction.
@@ -85,6 +97,14 @@ type Querier interface {
 	// and then reads the already-incremented value.
 	NextTicketNumber(ctx context.Context, arg NextTicketNumberParams) (int32, error)
 	QueueStatsForDate(ctx context.Context, arg QueueStatsForDateParams) (QueueStatsForDateRow, error)
+	// Disables or re-enables one staff account.
+	//
+	// The role filter is the safety rail: this statement can only ever touch
+	// a row whose role is 'staff', so the admin route built on it cannot lock
+	// an organisation out of its own account, not by an admin disabling
+	// themselves, and not by one admin disabling another. Enforcing that here
+	// rather than in the handler means every future caller inherits it.
+	SetUserDisabled(ctx context.Context, arg SetUserDisabledParams) (User, error)
 	TouchSession(ctx context.Context, token string) error
 	UnassignStaffService(ctx context.Context, arg UnassignStaffServiceParams) error
 	// from_status makes this a compare-and-swap, for the same reason

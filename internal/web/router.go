@@ -93,6 +93,9 @@ func (s *Server) Routes() http.Handler {
 	mux.Handle("GET /app/staff", requireAuth(requireAdmin(http.HandlerFunc(s.auth.GetStaffList))))
 	mux.Handle("GET /app/staff/new", requireAuth(requireAdmin(http.HandlerFunc(s.auth.GetNewStaff))))
 	mux.Handle("POST /app/staff", requireAuth(requireAdmin(auth.RequireCSRF(http.HandlerFunc(s.auth.PostNewStaff)))))
+	// Suspending an account decides who can sign in, so it belongs with the
+	// rest of org configuration rather than with the day's work.
+	mux.Handle("POST /app/staff/{staffID}/access", requireAuth(requireAdmin(auth.RequireCSRF(http.HandlerFunc(s.auth.PostStaffDisabled)))))
 
 	mux.Handle("GET /app/staff/{staffID}/availability", requireAuth(requireAdmin(http.HandlerFunc(s.availability.GetAvailability))))
 	mux.Handle("POST /app/staff/{staffID}/availability", requireAuth(requireAdmin(auth.RequireCSRF(http.HandlerFunc(s.availability.PostAvailability)))))
