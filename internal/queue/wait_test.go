@@ -1,6 +1,8 @@
 package queue
 
 import (
+	"regexp"
+	"strconv"
 	"testing"
 	"time"
 )
@@ -183,8 +185,12 @@ func TestFormatWait(t *testing.T) {
 		{2 * time.Minute, "Less than 5 minutes"},
 		{5 * time.Minute, "About 5 minutes"},
 		{45 * time.Minute, "About 45 minutes"},
-		{90 * time.Minute, "About an hour"},
-		{3 * time.Hour, "Over 3 hours"},
+		{time.Hour, "About 1 hour"},
+		{90 * time.Minute, "About 1 hour 30 minutes"},
+		{115 * time.Minute, "About 1 hour 55 minutes"},
+		{2 * time.Hour, "About 2 hours"},
+		{125 * time.Minute, "About 2 hours 5 minutes"},
+		{3 * time.Hour, "About 3 hours"},
 	}
 
 	for _, tt := range tests {
@@ -217,4 +223,43 @@ func TestFormatJoinWait(t *testing.T) {
 			}
 		})
 	}
+}
+
+// A wait shown to a customer must never read as shorter than the estimate
+// behind it. Under-promising is the failure that costs someone their place
+// in the line: they hear "about an hour", leave, and come back to find
+// their number long since called. Over-promising merely reads as cautious.
+//
+// The check is a sweep rather than a table because the wording changes
+// shape at several boundaries, and the property has to hold across all of
+// them, not only at the ones somebody thought to write down.
+func TestFormatWaitNeverUnderstatesTheEstimate(t *testing.T) {
+	for d := waitRounding; d <= 6*time.Hour; d += waitRounding {
+		stated, ok := parseStatedWait(FormatWait(d))
+		if !ok {
+			t.Fatalf("FormatWait(%v) = %q, which states no duration at all", d, FormatWait(d))
+		}
+		if stated < d {
+			t.Errorf("FormatWait(%v) = %q, which promises %v — less than the estimate", d, FormatWait(d), stated)
+		}
+	}
+}
+
+// parseStatedWait reads back the duration a rendered wait claims, so the
+// property test can compare the words against the number they came from.
+func parseStatedWait(s string) (time.Duration, bool) {
+	m := statedWait.FindStringSubmatch(s)
+	if m == nil {
+		return 0, false
+	}
+	return time.Duration(atoi(m[1]))*time.Hour + time.Duration(atoi(m[2]))*time.Minute, true
+}
+
+// statedWait matches every shape FormatWait produces past the "less than"
+// floor: "About 45 minutes", "About 2 hours", "About 1 hour 30 minutes".
+var statedWait = regexp.MustCompile(`^About (?:(\d+) hours?)? ?(?:(\d+) minutes?)?$`)
+
+func atoi(s string) int {
+	n, _ := strconv.Atoi(s)
+	return n
 }

@@ -78,6 +78,16 @@ func Position(ahead int) int {
 // FormatWait renders an estimate for a customer. It never shows a bare
 // "0 minutes" — being next in line is a statement about position, and the
 // caller shows that instead.
+//
+// Past an hour the wait is spelled out in hours *and* minutes rather than
+// collapsed to a phrase. An earlier version said "About an hour" for
+// anything under two, which told someone facing a 1h55m wait that they
+// had about an hour — an understatement of nearly an hour, and in the one
+// direction Estimate deliberately avoids being wrong in. A customer who
+// leaves and comes back on that basis has lost their place in the line.
+//
+// The estimate is already rounded up to five minutes, so the extra digits
+// claim no more precision than the number behind them has.
 func FormatWait(d time.Duration) string {
 	switch {
 	case d <= 0:
@@ -86,11 +96,16 @@ func FormatWait(d time.Duration) string {
 		return "Less than 5 minutes"
 	case d < time.Hour:
 		return fmt.Sprintf("About %d minutes", int(d.Minutes()))
-	case d < 2*time.Hour:
-		return "About an hour"
-	default:
-		return fmt.Sprintf("Over %d hours", int(d.Hours()))
 	}
+
+	hours := int(d / time.Hour)
+	minutes := int(d%time.Hour) / int(time.Minute)
+	if minutes == 0 {
+		return fmt.Sprintf("About %d %s", hours, plural(hours, "hour", "hours"))
+	}
+	return fmt.Sprintf("About %d %s %d %s",
+		hours, plural(hours, "hour", "hours"),
+		minutes, plural(minutes, "minute", "minutes"))
 }
 
 // FormatJoinWait renders an estimate for someone deciding whether to join
