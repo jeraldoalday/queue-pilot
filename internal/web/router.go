@@ -150,6 +150,11 @@ func (s *Server) Routes() http.Handler {
 	mux.HandleFunc("GET /q/{orgSlug}/{queueSlug}", s.queue.GetPublicBoard)
 	mux.HandleFunc("GET /q/{orgSlug}/{queueSlug}/board", s.queue.GetPublicBoardPartial)
 	mux.HandleFunc("GET /q/{orgSlug}/{queueSlug}/display", s.queue.GetPublicDisplay)
+	// The same board as JSON, for a screen this app does not render: a
+	// lobby television running someone else's signage, or a business
+	// putting its own waiting time on its own website. It carries no
+	// names, so it is served under the same rules as the display.
+	mux.HandleFunc("GET /api/q/{orgSlug}/{queueSlug}", s.queue.GetPublicAPIStatus)
 	mux.HandleFunc("GET /q/{orgSlug}/{queueSlug}/display/board", s.queue.GetPublicDisplayPartial)
 	// Only the write is limited. The board and ticket pages poll on a
 	// timer, so limiting reads would throttle the feature's own refresh;

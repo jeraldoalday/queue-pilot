@@ -4,6 +4,7 @@ package web
 
 import (
 	"context"
+	"encoding/json"
 	"html"
 	"io"
 	"net/http"
@@ -582,4 +583,55 @@ func bodyOf(t *testing.T, client *http.Client, srv *httptest.Server, path string
 		t.Fatalf("GET %s = %d, want 200", path, resp.StatusCode)
 	}
 	return string(body)
+}
+
+// The JSON endpoint is what a screen this app does not render reads, so
+// what matters is the contract: the shape a caller parses, the headers
+// that let a business embed it, and the tenant scoping every public URL
+// here is held to.
+func TestIntegrationPublicQueueAPI(t *testing.T) {
+	srv := newTestServer(t)
+	tt := newTenant(t, srv, "API Org")
+
+	join(t, srv, tt.boardPath(), "Ada Lovelace")
+	join(t, srv, tt.boardPath(), "Grace Hopper")
+
+	resp, err := srv.Client().Get(srv.URL + "/api/q/" + tt.orgSlug + "/" + tt.queueSlug)
+	if err != nil {
+		t.Fatalf("GET api: %v", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("api = %d, want 200", resp.StatusCode)
+	}
+	if got := resp.Header.Get("Content-Type"); !strings.HasPrefix(got, "application/json") {
+		t.Errorf("Content-Type = %q, want JSON", got)
+	}
+	// A business embedding its own waiting time in its own site fetches
+	// this from another origin; without this header the browser drops the
+	// response before their code ever sees it.
+	if got := resp.Header.Get("Access-Control-Allow-Origin"); got != "*" {
+		t.Errorf("Access-Control-Allow-Origin = %q, want *", got)
+	}
+
+	var status queue.PublicStatus
+	if err := json.NewDecoder(resp.Body).Decode(&status); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if status.Waiting != 2 {
+		t.Errorf("waiting = %d, want the two customers who just joined", status.Waiting)
+	}
+	if !status.Open {
+		t.Error("an open queue reported as closed")
+	}
+	if status.NowServing != nil {
+		t.Errorf("now_serving = %d with nobody called yet, want null", *status.NowServing)
+	}
+
+	// The same 404 the HTML pages give, for the same reason: a public URL
+	// space must not become a directory of who uses the product.
+	if code, _ := get(t, srv, "/api/q/"+tt.orgSlug+"/no-such-queue"); code != http.StatusNotFound {
+		t.Errorf("api for an unknown queue = %d, want 404", code)
+	}
 }
