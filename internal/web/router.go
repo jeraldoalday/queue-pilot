@@ -211,15 +211,3 @@ func (s *Server) handleHome(w http.ResponseWriter, r *http.Request) {
 		s.log.Error("handleHome: render", "error", err)
 	}
 }
-
-func (s *Server) handleAppHome(w http.ResponseWriter, r *http.Request) {
-	ident, ok := auth.CurrentIdentity(r.Context())
-	if !ok {
-		http.Redirect(w, r, "/login", http.StatusSeeOther)
-		return
-	}
-	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	if err := AppHome(ident).Render(r.Context(), w); err != nil {
-		s.log.Error("handleAppHome: render", "error", err)
-	}
-}

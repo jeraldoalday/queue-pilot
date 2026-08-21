@@ -1,37 +1,175 @@
 package web
 
 import (
-	"github.com/jeraldoalday/queuepilot/internal/session"
+	"strconv"
+	"time"
+
+	"github.com/jeraldoalday/queuepilot/internal/db"
 	"github.com/jeraldoalday/queuepilot/internal/tenant"
 	"github.com/jeraldoalday/queuepilot/internal/web/components"
 )
 
-templ AppHome(ident session.Identity) {
+// atClock renders an instant in the org's own timezone. Every time on this
+// page goes through it, for the same reason every other page's does: the
+// server's hours are nobody's business hours. The name avoids the
+// platform/clock package this file's own package already imports.
+func atClock(t time.Time, loc *time.Location) string {
+	return t.In(loc).Format("15:04")
+}
+
+func consoleURL(queueID string) string {
+	return "/app/queues/" + queueID + "/console"
+}
+
+templ AppHome(d Dashboard) {
 	@components.Layout("Dashboard") {
-		<main class="mx-auto max-w-2xl px-6 py-16">
-			<h1 class="text-2xl font-semibold tracking-tight">Welcome, { ident.Name }</h1>
-			<p class="mt-2 text-sm text-slate-600">
-				Signed in as { ident.Email } · role: { string(ident.Role) }
-			</p>
-			<p class="mt-4 space-x-4">
-				<a href="/app/schedule" class="text-sm font-medium text-slate-900 underline">Schedule</a>
-				if ident.Role == tenant.RoleAdmin {
-					<a href="/app/queues" class="text-sm font-medium text-slate-900 underline">Walk-in queues</a>
-				}
-			</p>
-			if ident.Role == tenant.RoleAdmin {
-				<p class="mt-2 space-x-4">
-					<a href="/app/services" class="text-sm font-medium text-slate-900 underline">Manage services</a>
-					<a href="/app/staff" class="text-sm font-medium text-slate-900 underline">Manage staff</a>
-					<a href="/app/settings" class="text-sm font-medium text-slate-900 underline">Settings</a>
+		<main class="mx-auto max-w-3xl px-6 py-12">
+			<div class="flex items-baseline justify-between gap-4">
+				<div>
+					<p class="text-sm text-slate-500">{ d.OrgName }</p>
+					<h1 class="text-2xl font-semibold tracking-tight">Today</h1>
+				</div>
+				<p class="text-sm text-slate-500">{ d.Day.Format("Monday, 2 January") }</p>
+			</div>
+			@dashboardNumbers(d)
+			if d.Quiet() {
+				<p class="mt-6 rounded-md bg-slate-100 px-4 py-3 text-sm text-slate-700">
+					Nothing waiting and nothing else booked today. A good moment for a cup of tea.
 				</p>
 			}
-			<form method="POST" action="/logout" class="mt-8">
-				<input type="hidden" name="csrf_token" value={ ident.CSRFToken }/>
-				<button type="submit" class="rounded-md border border-slate-300 px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-100">
-					Log out
-				</button>
-			</form>
+			@dashboardLines(d)
+			@dashboardNext(d)
+			@dashboardLinks(d)
 		</main>
 	}
+}
+
+// dashboardNumbers is the glance: the three counts somebody crossing the
+// floor wants without reading anything.
+templ dashboardNumbers(d Dashboard) {
+	<div class="mt-6 grid grid-cols-3 gap-3">
+		@statTile("Waiting", strconv.Itoa(d.Waiting()))
+		@statTile("At a counter", strconv.Itoa(d.InProgress()))
+		@statTile("Served today", strconv.Itoa(d.ServedToday()))
+	</div>
+}
+
+templ statTile(label, value string) {
+	<div class="rounded-lg border border-slate-200 bg-white p-4 text-center">
+		<p class="text-xs uppercase tracking-wide text-slate-500">{ label }</p>
+		<p class="mt-1 text-3xl font-semibold tabular-nums">{ value }</p>
+	</div>
+}
+
+// dashboardLines lists the open queues with the longest one marked, since
+// that is where a spare pair of hands should go.
+templ dashboardLines(d Dashboard) {
+	<h2 class="mt-10 text-lg font-medium">Walk-in queues</h2>
+	if len(d.Lines) == 0 {
+		<p class="mt-3 text-sm text-slate-500">
+			No open queues.
+			if d.Role == tenant.RoleAdmin {
+				<a href="/app/queues" class="underline">Open one</a>
+				and its public board goes live immediately.
+			}
+		</p>
+	}
+	<ul class="mt-3 space-y-2">
+		for _, line := range d.Lines {
+			<li>
+				<a
+					href={ templ.SafeURL(consoleURL(db.UUIDString(line.Queue.ID))) }
+					class="flex items-center justify-between gap-4 rounded-lg border border-slate-200 bg-white px-4 py-3 hover:border-slate-400"
+				>
+					<span class="font-medium">
+						{ line.Queue.Name }
+						if longest, ok := d.LongestLine(); ok && longest.Queue.ID == line.Queue.ID {
+							<span class="ml-2 rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-800">Longest</span>
+						}
+					</span>
+					<span class="shrink-0 text-sm text-slate-600 tabular-nums">
+						{ strconv.Itoa(line.Stats.Waiting) } waiting · { strconv.Itoa(line.Stats.Done) } done
+					</span>
+				</a>
+			</li>
+		}
+	</ul>
+}
+
+// dashboardNext answers "who is coming through the door next". An
+// appointment that has already started is not an answer to that, so the
+// panel goes quiet once the day's bookings are behind us.
+templ dashboardNext(d Dashboard) {
+	<h2 class="mt-10 text-lg font-medium">Appointments</h2>
+	<div class="mt-3 rounded-lg border border-slate-200 bg-white px-4 py-3">
+		if next, ok := d.NextAppointment(); ok {
+			<p class="text-xs uppercase tracking-wide text-slate-500">Next up</p>
+			<p class="mt-1 text-sm">
+				<span class="text-lg font-semibold tabular-nums">{ atClock(db.Time(next.StartsAt), d.Day.Location()) }</span>
+				&nbsp;{ next.CustomerName } · { next.ServiceName } with { next.StaffName }
+			</p>
+		} else {
+			<p class="text-sm text-slate-600">Nothing else booked today.</p>
+		}
+		<p class="mt-2 text-sm text-slate-500">
+			{ strconv.Itoa(d.Booked()) } { plural(d.Booked(), "appointment", "appointments") } on today ·
+			<a href="/app/schedule" class="underline">Schedule</a>
+		</p>
+	</div>
+}
+
+// plural picks the wording for a count, so the page reads as a sentence
+// rather than as "1 appointment(s)".
+func plural(n int, one, many string) string {
+	if n == 1 {
+		return one
+	}
+	return many
+}
+
+// dashboardLinks shows staff only what their role can actually open. A
+// shortcut to a page that answers with a 403 is worse than no shortcut.
+templ dashboardLinks(d Dashboard) {
+	<h2 class="mt-10 text-lg font-medium">Manage</h2>
+	<p class="mt-3 space-x-4 text-sm">
+		<a href="/app/schedule" class="font-medium text-slate-900 underline">Schedule</a>
+		if d.Role == tenant.RoleAdmin {
+			<a href="/app/queues" class="font-medium text-slate-900 underline">Queues</a>
+			<a href="/app/services" class="font-medium text-slate-900 underline">Services</a>
+			<a href="/app/staff" class="font-medium text-slate-900 underline">Staff</a>
+			<a href="/app/settings" class="font-medium text-slate-900 underline">Settings</a>
+		}
+	</p>
+	@dashboardBookingLink(d)
+	<form method="POST" action="/logout" class="mt-8">
+		<input type="hidden" name="csrf_token" value={ d.CSRFToken }/>
+		<button type="submit" class="rounded-md border border-slate-300 px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-100">
+			Log out, { d.Name }
+		</button>
+	</form>
+}
+
+// dashboardBookingLink surfaces the public booking URL, because a page
+// customers are meant to reach is no use if the business never sees the
+// address to put on its own site. When there is nothing bookable it says
+// why rather than linking to an empty list.
+templ dashboardBookingLink(d Dashboard) {
+	<div class="mt-4 rounded-lg border border-slate-200 bg-white px-4 py-3 text-sm">
+		if d.Bookable > 0 {
+			<p class="text-slate-600">
+				Customers book at
+				<a href={ templ.SafeURL("/book/" + d.OrgSlug) } class="font-medium text-slate-900 underline">/book/{ d.OrgSlug }</a>
+				— { strconv.Itoa(d.Bookable) } { plural(d.Bookable, "service", "services") } available online.
+			</p>
+		} else {
+			<p class="text-slate-600">
+				Nothing is bookable online yet: online booking needs an active service with at least one
+				member of staff assigned to it.
+				if d.Role == tenant.RoleAdmin {
+					<a href="/app/services" class="underline">Set that up</a>
+					and the page goes live at /book/{ d.OrgSlug }.
+				}
+			</p>
+		}
+	</div>
 }
