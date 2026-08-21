@@ -1,0 +1,25 @@
+# Dependency updates, opened as pull requests so CI decides whether they
+# are safe rather than a person guessing.
+#
+# Weekly rather than daily: this app has five direct dependencies, and a
+# pull request nobody reads is worse than one that arrives when there is
+# something to read.
+version: 2
+updates:
+  # The Go modules the binary is built from. Grouped into one pull request
+  # per week, since patch bumps to pgx and templ are read together or not
+  # at all.
+  - package-ecosystem: gomod
+    directory: /
+    schedule:
+      interval: weekly
+    groups:
+      go-dependencies:
+        patterns: ["*"]
+
+  # The actions the workflow pins. These go stale silently — a workflow
+  # keeps working on an old action until the day the runner drops it.
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly

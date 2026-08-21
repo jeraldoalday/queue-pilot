@@ -5,9 +5,21 @@ on:
     branches: [main]
   pull_request:
 
+# A branch pushed three times in a minute does not need three full runs of
+# a job that starts a database and builds everything. The newest push is
+# the only one whose answer anybody is waiting for.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   build-test:
     runs-on: ubuntu-latest
+    # The whole job is a few minutes. A run still going after twenty is
+    # hung — on the database service, or on a test waiting for something
+    # that will not arrive — and should be killed rather than left to burn
+    # an hour of the runner's own timeout.
+    timeout-minutes: 20
 
     services:
       postgres:
@@ -70,6 +82,19 @@ jobs:
 
       - name: Run migrations
         run: migrate -path migrations -database "$DATABASE_URL" up
+
+      # gofmt is checked here as well as in `make check`, because the
+      # Makefile's copy only runs for whoever remembers to run it. `gofmt
+      # -l` prints the offending files and exits 0 either way, so the
+      # output is what has to be turned into a failure.
+      - name: gofmt
+        run: |
+          unformatted="$(gofmt -l .)"
+          if [ -n "$unformatted" ]; then
+            echo "::error::these files are not gofmt'd — run 'make fmt' and commit the result"
+            echo "$unformatted"
+            exit 1
+          fi
 
       - name: go vet
         run: go vet ./...

@@ -1,6 +1,6 @@
 .PHONY: run dev docker-up docker-down migrate-up migrate-down migrate-create \
 	sqlc-generate templ-generate tailwind-build tailwind-watch test test-integration seed \
-	generate check check-all version build
+	generate check check-all version build fmt
 
 -include .env
 export
@@ -47,6 +47,12 @@ tailwind-watch:
 # after touching a .templ file, a .sql query, or anything a template
 # styles — all three are generated into files that live in git.
 generate: templ-generate sqlc-generate tailwind-build
+
+# fmt formats every Go file in place. It is what to run when `check` or CI
+# reports a file as unformatted — both of those only ever report, since a
+# check that rewrites the tree it is checking is not a check.
+fmt:
+	gofmt -w .
 
 # check is what CI runs, minus the integration tests that need a database.
 check: generate
