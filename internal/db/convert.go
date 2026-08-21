@@ -26,6 +26,22 @@ func IsUniqueViolation(err error) bool {
 	return errors.As(err, &pgErr) && pgErr.Code == pgUniqueViolation
 }
 
+// pgForeignKeyViolation is the Postgres error code for
+// foreign_key_violation (23503), returned e.g. when a row is deleted that
+// another table still references — a service an appointment was booked
+// against, which appointments.service_id holds with ON DELETE RESTRICT.
+const pgForeignKeyViolation = "23503"
+
+// IsForeignKeyViolation reports whether err is a Postgres foreign key
+// violation. It exists so a delete that history refuses can be told apart
+// from a database that is simply down: the first is a fact about the
+// caller's own data and has an answer they can act on, the second is an
+// outage the operator needs told about.
+func IsForeignKeyViolation(err error) bool {
+	var pgErr *pgconn.PgError
+	return errors.As(err, &pgErr) && pgErr.Code == pgForeignKeyViolation
+}
+
 // IsExclusionViolation reports whether err is a Postgres EXCLUDE
 // constraint violation, so a lost double-booking race reads as "that slot
 // was just taken" rather than an internal error.

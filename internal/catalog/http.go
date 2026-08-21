@@ -183,8 +183,12 @@ func (h *Handlers) DeleteServiceHandler(w http.ResponseWriter, r *http.Request) 
 	}
 
 	if err := DeleteService(r.Context(), h.pool, orgID, serviceID); err != nil {
-		h.renderSectionWithError(w, r, orgID, ident.CSRFToken,
-			"Couldn't delete that service — it may already be used by appointments.")
+		// Every failure used to come back as the same guess — "it may
+		// already be used by appointments" — whether or not it was. An
+		// admin whose database was briefly unreachable was told their own
+		// data was the problem, was offered nothing to do about it, and
+		// nothing was logged for whoever could have seen the real cause.
+		h.renderSectionWithError(w, r, orgID, ident.CSRFToken, h.deleteError(err, serviceID))
 		return
 	}
 
@@ -265,6 +269,21 @@ func (h *Handlers) renderSection(w http.ResponseWriter, r *http.Request, orgID, 
 func (h *Handlers) renderSectionWithError(w http.ResponseWriter, r *http.Request, orgID, csrfToken, msg string) {
 	w.WriteHeader(http.StatusUnprocessableEntity)
 	h.renderSection(w, r, orgID, csrfToken, msg)
+}
+
+// deleteError words the one failure a service delete can legitimately
+// hit, and treats everything else as what it is: unexpected, logged, and
+// not the admin's fault.
+func (h *Handlers) deleteError(err error, serviceID string) string {
+	if errors.Is(err, ErrServiceInUse) {
+		// Naming the way forward matters more than naming the cause. The
+		// service cannot be deleted and never will be — turning it off is
+		// what the admin actually wanted, and it takes it off the booking
+		// page and out of the schedule's picker just the same.
+		return "This service has appointments recorded against it, so it can't be deleted. Turn it off instead — it disappears from online booking and from new bookings, and its history stays intact."
+	}
+	h.log.Error("DeleteServiceHandler", "error", err, "service_id", serviceID)
+	return "Couldn't delete that service. Please try again."
 }
 
 func (h *Handlers) userFacingError(err error) string {

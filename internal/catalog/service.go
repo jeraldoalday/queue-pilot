@@ -19,6 +19,11 @@ import (
 
 var ErrSlugTaken = errors.New("catalog: a service with a conflicting slug already exists")
 
+// ErrServiceInUse means the service has appointments recorded against it,
+// so the history holding those appointments together will not let it be
+// deleted.
+var ErrServiceInUse = errors.New("catalog: this service has appointments recorded against it")
+
 // ValidationError wraps a message that is always safe to show a user
 // directly. See auth.ValidationError for the same pattern.
 type ValidationError struct{ msg string }
@@ -103,11 +108,23 @@ func UpdateService(ctx context.Context, pool *pgxpool.Pool, orgID, serviceID str
 	})
 }
 
+// DeleteService removes a service outright.
+//
+// It fails with ErrServiceInUse once anything has been booked against the
+// service, because appointments.service_id is ON DELETE RESTRICT: an
+// appointment records what was performed, and a schedule or a report read
+// six months later would otherwise refer to a service that no longer
+// exists. Deactivating is the answer in that case, which is why the two
+// sit next to each other in the UI.
 func DeleteService(ctx context.Context, pool *pgxpool.Pool, orgID, serviceID string) error {
-	return sqlc.New(pool).DeleteService(ctx, sqlc.DeleteServiceParams{
+	err := sqlc.New(pool).DeleteService(ctx, sqlc.DeleteServiceParams{
 		ID:    db.MustUUID(serviceID),
 		OrgID: db.MustUUID(orgID),
 	})
+	if db.IsForeignKeyViolation(err) {
+		return ErrServiceInUse
+	}
+	return err
 }
 
 // uniqueServiceSlug mirrors auth.uniqueOrgSlug's collision strategy,
