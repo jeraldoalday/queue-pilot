@@ -23,12 +23,26 @@ func Login(ctx context.Context, pool *pgxpool.Pool, sessions *session.Store, ema
 	user, err := q.GetUserByEmail(ctx, email)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
+			// No account to compare against, so compare against nothing:
+			// returning here immediately would make an unknown address
+			// answer visibly faster than a known one with the wrong
+			// password, which tells a caller which addresses have
+			// accounts. See EqualiseVerifyCost.
+			EqualiseVerifyCost(password)
 			return session.Identity{}, ErrInvalidCredentials
 		}
 		return session.Identity{}, err
 	}
 
-	if user.DisabledAt.Valid || !VerifyPassword(user.PasswordHash, password) {
+	// The comparison runs even for a disabled account, and its result is
+	// combined afterwards rather than short-circuited. `disabled ||
+	// !verify` would skip the bcrypt work whenever the account is
+	// disabled, so a disabled account would answer faster than an active
+	// one — separating "this address is disabled here" from "this address
+	// is not registered here", which is exactly the distinction the shared
+	// ErrInvalidCredentials exists to withhold.
+	passwordOK := VerifyPassword(user.PasswordHash, password)
+	if user.DisabledAt.Valid || !passwordOK {
 		return session.Identity{}, ErrInvalidCredentials
 	}
 
