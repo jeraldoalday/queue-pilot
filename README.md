@@ -12,6 +12,20 @@ against generated slots. Double-booking is prevented by a Postgres
 `EXCLUDE` constraint, not only by an application check, so it holds under
 concurrency.
 
+Customers book themselves at `/book/{org}`: the services on offer, a
+day's free times, and a confirmation page they can come back to and
+cancel from. The times are gathered per staff member and merged, so two
+colleagues free at 10:00 is one 10:00 on the page rather than a choice
+the customer has no way to make; which of them takes it is decided by
+name, so the page cannot quietly reassign a slot between rendering and
+submitting. A booking has to start at least 15 minutes out and within 60
+days, and the submitted slot is re-derived and matched rather than
+trusted — an edited form asking for three in the morning, or for a time
+that has since been taken, comes back as the picker with a sentence.
+Cancelling frees the slot for the next person, which is the whole reason
+it is offered: a customer who simply does not come is written off as a
+no-show and their time stays blocked.
+
 **Walk-in queues.** Named lines customers join without an appointment.
 Each queue has:
 
@@ -34,6 +48,15 @@ Each queue has:
   mid-morning is not flattered by outcomes nobody knows yet. Admins can
   download the same day as CSV.
 
+Each queue also answers as JSON at `/api/q/{org}/{queue}`, for a screen
+this app does not render — a lobby television running someone else's
+signage, or a business putting its own waiting time on its own website.
+It carries no names or phone numbers, nothing the waiting-room display
+would not show a whole room, which is what makes it safe to serve
+without a session and from any origin. The wait it reports comes from
+the same calculation the public board renders, so a website cannot
+contradict the sign above the door.
+
 Ticket numbers restart at 1 each service day, in the org's timezone, and
 are allocated so that simultaneous walk-ins can never share a number.
 "Call next" claims a ticket with `FOR UPDATE SKIP LOCKED`, so two staff
@@ -43,11 +66,27 @@ Everything is multi-tenant: `org_id` scopes every read and write, and the
 tenant comes from the session (authenticated pages) or from the URL slug
 (public pages) — never from a client-supplied field.
 
+**Dashboard.** `/app` opens on the floor rather than on a welcome
+message: how many people are waiting across every line, how many are at
+a counter, how many have been served today, which queue is longest, and
+the next appointment still ahead — measured from now, so one that
+started twenty minutes ago is not offered as who is coming through the
+door next. It also carries the org's public booking address, or says
+what is missing when nothing is bookable yet.
+
 **Roles.** Admins configure the organisation: services, staff, queues,
 settings, and the CSV export, which carries customer names and phone
 numbers. Staff do the job: the schedule, every queue console action, and
 the day report. The split is enforced on the routes and covered by tests
 that sign in as each role.
+
+An admin can suspend a staff account, which signs it out everywhere and
+blocks it from signing back in. Suspension rather than deletion:
+appointments record who performed them and tickets record who called
+them, so removing the row would either destroy that history or be
+refused by the keys holding it. The query only matches staff rows, so
+the route cannot reach an admin — an organisation cannot lock itself out
+of its own account, by accident or through a hand-edited form.
 
 **Settings.** `/app/settings` sets the organisation's name and timezone.
 The timezone is the one every service day is measured in — when ticket
@@ -60,11 +99,16 @@ rename, so a printed QR code keeps working.
 
 Under active scaffold development, following a 14-day build plan (see
 commit history for day-by-day progress). Auth, RBAC, CSRF, tenant
-isolation, the appointment flow and the walk-in queue flow are all in
-place and verified against a real Postgres instance.
+isolation, the appointment flow (staff-booked and customer-booked), the
+walk-in queue flow and the org dashboard are all in place and verified
+against a real Postgres instance.
 
 ## Operating it
 
+- `GET /api/q/{org}/{queue}` — one queue's live state as JSON, described
+  above. Unauthenticated, cacheable for five seconds, and served with
+  `Access-Control-Allow-Origin: *` because a business embedding its own
+  waiting time in its own site should not need a proxy to do it.
 - `GET /healthz` — readiness, including a database ping, so an
   orchestrator does not route traffic to an instance that cannot reach
   Postgres.
@@ -90,7 +134,7 @@ place and verified against a real Postgres instance.
 
 ## Prerequisites
 
-- Go 1.23+
+- Go 1.26+ (the toolchain `go.mod` pins)
 - A Postgres database. Either works:
   - **Hosted (current dev setup)**: a [Supabase](https://supabase.com)
     project's Postgres connection string. Use the direct or session-mode
@@ -125,9 +169,10 @@ make seed
 ```
 
 Creates one worked-through organization — an admin, two staff on two
-services with weekday hours, and a walk-in queue partway through being
-served — then prints the sign-in details and the console, board and
-display URLs. It refuses to run with `ENV=production`, since it writes
+services with weekday hours, a walk-in queue partway through being
+served, and appointments booked into the next free slots — then prints
+the sign-in details and the console, board, display, JSON and online
+booking URLs. It refuses to run with `ENV=production`, since it writes
 fabricated customers and accounts whose password is in the source.
 
 ## Testing
@@ -138,12 +183,17 @@ make test-integration  # integration tests against a real Postgres
 ```
 
 Unit tests cover the pure logic — slot generation, the appointment and
-ticket lifecycles, wait estimation, rate limiting, report aggregation,
-CSV formatting, timezone validation — with no database. Integration tests
+ticket lifecycles, wait estimation, the public booking window and the
+slot merge behind it, rate limiting, report aggregation, the dashboard's
+totals, CSV and JSON formatting, timezone validation — with no database. Integration tests
 cover what only a real database can prove: the double-booking constraint,
 concurrent ticket numbering, concurrent "call next", that two staff
 changing one ticket's status at the same instant produce exactly one
-winner, and that one org cannot read or modify another's data.
+winner, that a suspended account loses its session and cannot sign back
+in, that a service with appointments against it refuses to be deleted,
+that the whole public booking flow works through the real router — the
+tests read the slot values off the rendered page and submit those — and
+that one org cannot read or modify another's data.
 
 `make check` runs everything CI does except the integration tests,
 including the generated-artifact drift checks. Run it before pushing.
