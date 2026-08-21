@@ -5,10 +5,12 @@ import (
 	"flag"
 	"fmt"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 
+	"github.com/jeraldoalday/queuepilot/internal/appointment"
 	"github.com/jeraldoalday/queuepilot/internal/auth"
 	"github.com/jeraldoalday/queuepilot/internal/availability"
 	"github.com/jeraldoalday/queuepilot/internal/catalog"
@@ -87,10 +89,15 @@ func seed(args []string) error {
 	if err != nil {
 		return err
 	}
-	if err := seedServices(ctx, pool, orgID, staffIDs); err != nil {
+	serviceIDs, err := seedServices(ctx, pool, orgID, staffIDs)
+	if err != nil {
 		return err
 	}
 	queueSlug, err := seedQueue(ctx, pool, orgID)
+	if err != nil {
+		return err
+	}
+	appointments, err := seedAppointments(ctx, pool, orgID, serviceIDs, staffIDs)
 	if err != nil {
 		return err
 	}
@@ -109,12 +116,19 @@ func seed(args []string) error {
   queue console  http://localhost:%s/app/queues
   public board   http://localhost:%s/q/%s/%s
   display screen http://localhost:%s/q/%s/%s/display
+  queue JSON     http://localhost:%s/api/q/%s/%s
+  online booking http://localhost:%s/book/%s
+
+  %d appointments booked into the next free slots
 `,
 		orgRow.Name,
 		cfg.Port, adminEmail, seedPassword,
 		cfg.Port,
 		cfg.Port, orgRow.Slug, queueSlug,
 		cfg.Port, orgRow.Slug, queueSlug,
+		cfg.Port, orgRow.Slug, queueSlug,
+		cfg.Port, orgRow.Slug,
+		appointments,
 	)
 	return nil
 }
@@ -140,7 +154,7 @@ func seedStaff(ctx context.Context, pool *pgxpool.Pool, orgID string) ([]string,
 	return ids, nil
 }
 
-func seedServices(ctx context.Context, pool *pgxpool.Pool, orgID string, staffIDs []string) error {
+func seedServices(ctx context.Context, pool *pgxpool.Pool, orgID string, staffIDs []string) ([]string, error) {
 	services := []struct {
 		name     string
 		duration int
@@ -149,17 +163,20 @@ func seedServices(ctx context.Context, pool *pgxpool.Pool, orgID string, staffID
 		{"Follow-up", 15},
 	}
 
+	created := make([]string, 0, len(services))
 	for _, s := range services {
 		svc, err := catalog.CreateService(ctx, pool, orgID, catalog.ServiceInput{
 			Name:            s.name,
 			DurationMinutes: s.duration,
+			Active:          true,
 		})
 		if err != nil {
-			return fmt.Errorf("seed: create service %s: %w", s.name, err)
+			return nil, fmt.Errorf("seed: create service %s: %w", s.name, err)
 		}
+		created = append(created, db.UUIDString(svc.ID))
 		for _, staffID := range staffIDs {
 			if err := catalog.ToggleStaffAssignment(ctx, pool, orgID, db.UUIDString(svc.ID), staffID); err != nil {
-				return fmt.Errorf("seed: assign staff to %s: %w", s.name, err)
+				return nil, fmt.Errorf("seed: assign staff to %s: %w", s.name, err)
 			}
 		}
 	}
@@ -174,11 +191,82 @@ func seedServices(ctx context.Context, pool *pgxpool.Pool, orgID string, staffID
 				StartMin: 9 * 60,
 				EndMin:   17 * 60,
 			}); err != nil {
-				return fmt.Errorf("seed: add availability: %w", err)
+				return nil, fmt.Errorf("seed: add availability: %w", err)
 			}
 		}
 	}
-	return nil
+	return created, nil
+}
+
+// seedAppointments books the next few free slots, so the schedule and the
+// dashboard have something on them.
+//
+// It books into whatever the slot generator actually offers rather than
+// inventing times, which means the demo data obeys the same availability
+// and double-booking rules a real booking does. Seeding at nine in the
+// morning fills today; seeding at nine at night, or over a weekend, walks
+// forward to the next working day rather than producing an empty schedule
+// and looking broken.
+func seedAppointments(ctx context.Context, pool *pgxpool.Pool, orgID string, serviceIDs, staffIDs []string) (int, error) {
+	if len(serviceIDs) == 0 || len(staffIDs) == 0 {
+		return 0, nil
+	}
+
+	loc, err := org.Location(ctx, pool, orgID)
+	if err != nil {
+		return 0, err
+	}
+	now := time.Now().In(loc)
+
+	customers := []string{"Amy Santiago", "Jake Peralta", "Gina Linetti"}
+	booked := 0
+	for i, name := range customers {
+		serviceID := serviceIDs[i%len(serviceIDs)]
+		staffID := staffIDs[i%len(staffIDs)]
+
+		slot, ok, err := nextFreeSlot(ctx, pool, orgID, staffID, serviceID, now)
+		if err != nil {
+			return booked, err
+		}
+		if !ok {
+			// A whole week with nothing free means the demo's own hours
+			// are already full, which is not an error worth stopping for.
+			continue
+		}
+
+		if _, err := appointment.Book(ctx, pool, orgID, appointment.BookInput{
+			ServiceID:     serviceID,
+			StaffUserID:   staffID,
+			CustomerName:  name,
+			CustomerEmail: strings.ToLower(strings.ReplaceAll(name, " ", ".")) + "@demo.test",
+			StartsAt:      slot.Start,
+		}); err != nil {
+			return booked, fmt.Errorf("seed: book %s: %w", name, err)
+		}
+		booked++
+	}
+	return booked, nil
+}
+
+// seedSearchDays is how far ahead nextFreeSlot will look. A week covers
+// any weekly schedule, including one that only opens on a single day.
+const seedSearchDays = 7
+
+// nextFreeSlot finds the earliest slot still ahead of `now`, starting
+// today and walking forward.
+func nextFreeSlot(ctx context.Context, pool *pgxpool.Pool, orgID, staffID, serviceID string, now time.Time) (availability.Slot, bool, error) {
+	for day := 0; day < seedSearchDays; day++ {
+		slots, err := appointment.AvailableSlots(ctx, pool, orgID, staffID, serviceID, now.AddDate(0, 0, day))
+		if err != nil {
+			return availability.Slot{}, false, fmt.Errorf("seed: available slots: %w", err)
+		}
+		for _, s := range slots {
+			if s.Start.After(now) {
+				return s, true, nil
+			}
+		}
+	}
+	return availability.Slot{}, false, nil
 }
 
 // seedQueue creates a walk-in line and leaves it mid-service: one customer
