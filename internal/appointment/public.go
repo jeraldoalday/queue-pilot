@@ -136,6 +136,47 @@ func MergeStaffSlots(perStaff []StaffSlots, notBefore, notAfter time.Time) []Ope
 	return out
 }
 
+// SlotToken encodes one offered slot as a single form value: the instant
+// it starts, and the staff member the page assigned it to.
+//
+// Both facts have to travel together because a radio button carries one
+// value, and they must not be split across a radio and a hidden field kept
+// in step by script — the content security policy allows no inline script,
+// and a page that needs one to submit correctly is a page that submits
+// incorrectly when it does not run.
+//
+// The token is not trusted on the way back. BookPublic re-derives the
+// day's slots and matches against them, so the token's only job is to say
+// which of the offered slots was chosen. A forged one names a slot that is
+// not on offer and is refused like any other.
+//
+// The instant is written in RFC 3339 with its offset, so the value means
+// the same thing whatever zone the customer's own device is set to.
+func SlotToken(s OpenSlot, loc *time.Location) string {
+	if loc == nil {
+		loc = time.UTC
+	}
+	return s.Start.In(loc).Format(time.RFC3339) + "|" + s.StaffUserID
+}
+
+// ParseSlotToken reads a token back. A malformed one yields a zero time,
+// which the booking rules reject as "please choose a time" — the same
+// answer as choosing nothing, which is what a broken value amounts to.
+func ParseSlotToken(token string, loc *time.Location) (start time.Time, staffUserID string, ok bool) {
+	if loc == nil {
+		loc = time.UTC
+	}
+	raw, staff, found := strings.Cut(token, "|")
+	if !found {
+		return time.Time{}, "", false
+	}
+	parsed, err := time.ParseInLocation(time.RFC3339, raw, loc)
+	if err != nil {
+		return time.Time{}, "", false
+	}
+	return parsed, staff, true
+}
+
 // BookingWindow returns the earliest and latest start a public booking may
 // have, given the current instant. Both ends are needed in three places —
 // generating slots, validating a submission, and bounding the date

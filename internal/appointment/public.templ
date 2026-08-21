@@ -1,0 +1,230 @@
+package appointment
+
+import (
+	"fmt"
+	"time"
+
+	"github.com/jeraldoalday/queuepilot/internal/db"
+	"github.com/jeraldoalday/queuepilot/internal/db/sqlc"
+	"github.com/jeraldoalday/queuepilot/internal/web/components"
+)
+
+// formatDuration renders a service length the way a customer would say it,
+// not the way it is stored: "1 hr 30 min" rather than "90 minutes".
+func formatDuration(minutes int32) string {
+	switch {
+	case minutes < 60:
+		return fmt.Sprintf("%d min", minutes)
+	case minutes%60 == 0:
+		return fmt.Sprintf("%d hr", minutes/60)
+	default:
+		return fmt.Sprintf("%d hr %d min", minutes/60, minutes%60)
+	}
+}
+
+// formatDayHeading spells the date out in full. The picker is often opened
+// days ahead, where "Tue 17" alone leaves a customer counting weeks.
+func formatDayHeading(day time.Time) string {
+	return day.Format("Monday, 2 January 2006")
+}
+
+
+templ PublicServicesPage(o sqlc.Organization, services []sqlc.Service) {
+	@components.Layout("Book with " + o.Name) {
+		<main class="mx-auto max-w-xl px-6 py-12">
+			<p class="text-sm text-slate-500">{ o.Name }</p>
+			<h1 class="text-2xl font-semibold tracking-tight">Book an appointment</h1>
+			if len(services) == 0 {
+				<p class="mt-6 rounded-md bg-slate-100 px-4 py-3 text-sm text-slate-700">
+					There's nothing available to book online right now. Please get in touch directly.
+				</p>
+			}
+			<ul class="mt-6 space-y-3">
+				for _, svc := range services {
+					<li>
+						<a
+							href={ templ.SafeURL(bookURL(o.Slug, svc.Slug)) }
+							class="block rounded-lg border border-slate-200 bg-white p-5 hover:border-slate-400"
+						>
+							<div class="flex items-baseline justify-between gap-4">
+								<span class="text-base font-medium">{ svc.Name }</span>
+								<span class="shrink-0 text-sm text-slate-500">{ formatDuration(svc.DurationMinutes) }</span>
+							</div>
+							if svc.Description != "" {
+								<p class="mt-1 text-sm text-slate-600">{ svc.Description }</p>
+							}
+						</a>
+					</li>
+				}
+			</ul>
+		</main>
+	}
+}
+
+templ PublicBookPage(o sqlc.Organization, svc sqlc.Service, day time.Time, slots []OpenSlot, loc *time.Location, errMsg string) {
+	@components.Layout(svc.Name + " · " + o.Name) {
+		<main class="mx-auto max-w-xl px-6 py-12">
+			<p class="mb-4">
+				<a href={ templ.SafeURL("/book/" + o.Slug) } class="text-sm text-slate-600 underline">&larr; All services</a>
+			</p>
+			<p class="text-sm text-slate-500">{ o.Name }</p>
+			<h1 class="text-2xl font-semibold tracking-tight">{ svc.Name }</h1>
+			<p class="mt-1 text-sm text-slate-600">{ formatDuration(svc.DurationMinutes) }</p>
+			if errMsg != "" {
+				<p class="mt-4 rounded-md bg-red-50 px-3 py-2 text-sm text-red-700">{ errMsg }</p>
+			}
+			@publicDayPicker(o, svc, day)
+			<h2 class="mt-8 text-base font-medium">{ formatDayHeading(day) }</h2>
+			if len(slots) == 0 {
+				<p class="mt-3 rounded-md bg-slate-100 px-4 py-3 text-sm text-slate-700">
+					Nothing free on this day. Try another date.
+				</p>
+			} else {
+				@publicSlotForm(o, svc, day, slots, loc)
+			}
+		</main>
+	}
+}
+
+// publicDayPicker is a plain GET form: choosing a day is navigation, so it
+// belongs in the URL where it can be bookmarked, shared and gone back to.
+templ publicDayPicker(o sqlc.Organization, svc sqlc.Service, day time.Time) {
+	<form method="GET" action={ templ.SafeURL(bookURL(o.Slug, svc.Slug)) } class="mt-6 flex items-end gap-3">
+		<div>
+			<label for="date" class="block text-xs font-medium text-slate-700">Date</label>
+			<input id="date" name="date" type="date" value={ day.Format(dateFormat) } class="mt-1 rounded-md border border-slate-300 px-2 py-1.5 text-sm"/>
+		</div>
+		<button type="submit" class="rounded-md border border-slate-300 px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-100">
+			Show times
+		</button>
+		<a href={ templ.SafeURL(bookURL(o.Slug, svc.Slug) + "?date=" + day.AddDate(0, 0, 1).Format(dateFormat)) } class="pb-2 text-sm text-slate-600 underline">
+			Next day
+		</a>
+	</form>
+}
+
+// publicSlotForm asks for the time first and the customer's details once,
+// below it. Radio buttons rather than a submit-per-slot: a customer who
+// mistypes their email should not have to find their time again, and the
+// browser keeps the selection when the page comes back with an error.
+templ publicSlotForm(o sqlc.Organization, svc sqlc.Service, day time.Time, slots []OpenSlot, loc *time.Location) {
+	<form method="POST" action={ templ.SafeURL(bookURL(o.Slug, svc.Slug)) } class="mt-3">
+		<input type="hidden" name="date" value={ day.Format(dateFormat) }/>
+		<fieldset>
+			<legend class="sr-only">Available times</legend>
+			<div class="grid grid-cols-3 gap-2 sm:grid-cols-4">
+				for i, s := range slots {
+					<label class="cursor-pointer">
+						<input
+							type="radio"
+							name="slot"
+							value={ SlotToken(s, loc) }
+							required
+							checked?={ i == 0 }
+							class="peer sr-only"
+						/>
+						<span class="block rounded-md border border-slate-300 bg-white px-2 py-2 text-center text-sm tabular-nums peer-checked:border-slate-900 peer-checked:bg-slate-900 peer-checked:text-white">
+							{ formatClock(s.Start, loc) }
+						</span>
+					</label>
+				}
+			</div>
+		</fieldset>
+		<div class="mt-6 space-y-4 rounded-lg border border-slate-200 bg-white p-5">
+			<div>
+				<label for="customer_name" class="block text-xs font-medium text-slate-700">Your name</label>
+				<input id="customer_name" name="customer_name" type="text" required maxlength="120" autocomplete="name" class="mt-1 block w-full rounded-md border border-slate-300 px-3 py-2 text-sm"/>
+			</div>
+			<div>
+				<label for="customer_email" class="block text-xs font-medium text-slate-700">Email</label>
+				<input id="customer_email" name="customer_email" type="email" required maxlength="200" autocomplete="email" class="mt-1 block w-full rounded-md border border-slate-300 px-3 py-2 text-sm"/>
+				<p class="mt-1 text-xs text-slate-500">Your confirmation link goes here — keep it to change or cancel later.</p>
+			</div>
+			<div>
+				<label for="customer_phone" class="block text-xs font-medium text-slate-700">Phone (optional)</label>
+				<input id="customer_phone" name="customer_phone" type="tel" maxlength="32" autocomplete="tel" class="mt-1 block w-full rounded-md border border-slate-300 px-3 py-2 text-sm"/>
+			</div>
+			<button type="submit" class="w-full rounded-md bg-slate-900 px-4 py-2.5 text-sm font-medium text-white hover:bg-slate-700">
+				Book this time
+			</button>
+		</div>
+	</form>
+}
+
+templ PublicAppointmentPage(o sqlc.Organization, appt sqlc.GetAppointmentWithNamesRow, loc *time.Location, now time.Time, errMsg string) {
+	@components.Layout("Your appointment · " + o.Name) {
+		<main class="mx-auto max-w-md px-6 py-12">
+			<p class="text-sm text-slate-500">{ o.Name }</p>
+			<h1 class="text-2xl font-semibold tracking-tight">
+				if Status(appt.Status) == StatusCancelled {
+					Appointment cancelled
+				} else {
+					You're booked
+				}
+			</h1>
+			if errMsg != "" {
+				<p class="mt-4 rounded-md bg-red-50 px-3 py-2 text-sm text-red-700">{ errMsg }</p>
+			}
+			<div class="mt-6 rounded-lg border border-slate-200 bg-white p-6">
+				<p class="text-3xl font-semibold tabular-nums">{ formatClock(db.Time(appt.StartsAt), loc) }</p>
+				<p class="mt-1 text-sm text-slate-600">{ formatDayHeading(db.Time(appt.StartsAt).In(loc)) }</p>
+				<dl class="mt-5 space-y-2 text-sm">
+					<div class="flex justify-between gap-4">
+						<dt class="text-slate-500">Service</dt>
+						<dd class="text-right font-medium">{ appt.ServiceName }</dd>
+					</div>
+					<div class="flex justify-between gap-4">
+						<dt class="text-slate-500">With</dt>
+						<dd class="text-right font-medium">{ appt.StaffName }</dd>
+					</div>
+					<div class="flex justify-between gap-4">
+						<dt class="text-slate-500">Name</dt>
+						<dd class="text-right font-medium">{ appt.CustomerName }</dd>
+					</div>
+					<div class="flex justify-between gap-4">
+						<dt class="text-slate-500">Status</dt>
+						<dd class={ "text-right font-medium", statusClass(appt.Status) }>{ publicStatusLabel(appt.Status) }</dd>
+					</div>
+				</dl>
+			</div>
+			if canCancel(appt, now) {
+				<form method="POST" action={ templ.SafeURL(appointmentURL(o.Slug, db.UUIDString(appt.ID)) + "/cancel") } class="mt-4">
+					<button type="submit" class="w-full rounded-md border border-slate-300 px-4 py-2.5 text-sm font-medium text-slate-700 hover:bg-slate-100">
+						Cancel this appointment
+					</button>
+					<p class="mt-2 text-center text-xs text-slate-500">
+						Cancelling frees the time for someone else — please do it rather than not turning up.
+					</p>
+				</form>
+			}
+			<p class="mt-6 text-center text-xs text-slate-500">
+				Keep this page's link. It is the only way back to this booking.
+			</p>
+		</main>
+	}
+}
+
+// canCancel decides whether the release button is offered at all. It
+// mirrors CancelPublic's rule rather than restating it loosely: a button
+// the endpoint would refuse is worse than no button.
+func canCancel(appt sqlc.GetAppointmentWithNamesRow, now time.Time) bool {
+	return Status(appt.Status) == StatusBooked && db.Time(appt.StartsAt).After(now)
+}
+
+// publicStatusLabel words a status for the person it belongs to. The
+// schedule says "no_show" about a customer; the customer's own page says
+// what happened to their appointment.
+func publicStatusLabel(status string) string {
+	switch Status(status) {
+	case StatusBooked:
+		return "Confirmed"
+	case StatusCompleted:
+		return "Completed"
+	case StatusCancelled:
+		return "Cancelled"
+	case StatusNoShow:
+		return "Missed"
+	default:
+		return status
+	}
+}

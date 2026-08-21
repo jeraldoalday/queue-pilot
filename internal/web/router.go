@@ -136,6 +136,13 @@ func (s *Server) Routes() http.Handler {
 	mux.Handle("POST /app/queues/{id}/tickets", requireAuth(auth.RequireCSRF(http.HandlerFunc(s.queue.PostTicket))))
 	mux.Handle("POST /app/tickets/{id}/status", requireAuth(auth.RequireCSRF(http.HandlerFunc(s.queue.PostTicketStatus))))
 
+	// Public booking pages. Same rule as the public queue pages below:
+	// no session, the tenant comes from the {orgSlug} segment, and every
+	// lookup under it is scoped by the org ID that resolves to.
+	mux.HandleFunc("GET /book/{orgSlug}", s.appointment.GetPublicServices)
+	mux.HandleFunc("GET /book/{orgSlug}/{serviceSlug}", s.appointment.GetPublicBook)
+	mux.HandleFunc("GET /book/{orgSlug}/a/{appointmentID}", s.appointment.GetPublicAppointmentPage)
+
 	// Public queue pages. These carry no session: the tenant comes from
 	// the {orgSlug} path segment, and every lookup below it is scoped by
 	// the org ID that resolves to — the same rule the authenticated side
@@ -149,6 +156,12 @@ func (s *Server) Routes() http.Handler {
 	// taking a ticket is the action that costs a queue something.
 	limitPublic := ratelimit.Middleware(s.publicLimit, s.cfg.TrustProxyHeaders, s.log)
 	mux.Handle("POST /q/{orgSlug}/{queueSlug}/tickets", limitPublic(http.HandlerFunc(s.queue.PostPublicTicket)))
+	// The two public booking writes share that limit for the same reason:
+	// a form nobody has to sign in to reach is one a script can submit in
+	// a loop, and a schedule filled with junk appointments costs a
+	// business its whole day rather than one number on a board.
+	mux.Handle("POST /book/{orgSlug}/{serviceSlug}", limitPublic(http.HandlerFunc(s.appointment.PostPublicBook)))
+	mux.Handle("POST /book/{orgSlug}/a/{appointmentID}/cancel", limitPublic(http.HandlerFunc(s.appointment.PostPublicCancel)))
 	mux.HandleFunc("GET /q/{orgSlug}/{queueSlug}/t/{ticketID}", s.queue.GetPublicTicket)
 	mux.HandleFunc("GET /q/{orgSlug}/{queueSlug}/t/{ticketID}/status", s.queue.GetPublicTicketPartial)
 	// Leaving the line shares the join form's limit: both are writes a
