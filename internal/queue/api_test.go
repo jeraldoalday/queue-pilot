@@ -2,6 +2,7 @@ package queue
 
 import (
 	"encoding/json"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -125,5 +126,16 @@ func TestPublicStatusCarriesNoPersonalData(t *testing.T) {
 		if strings.Contains(string(encoded), secret) {
 			t.Errorf("the public status payload contains %q:\n%s", secret, encoded)
 		}
+	}
+}
+
+// The cache window is documented once, as a constant, and served as a
+// header. Those were two separate literals until now, which meant editing
+// the constant moved the documentation and left the header alone.
+func TestAPICacheControlIsBuiltFromTheDocumentedMaxAge(t *testing.T) {
+	want := "public, max-age=" + strconv.Itoa(apiMaxAge)
+	if apiCacheControl != want {
+		t.Errorf("Cache-Control = %q, want %q — the header and the constant have drifted apart",
+			apiCacheControl, want)
 	}
 }

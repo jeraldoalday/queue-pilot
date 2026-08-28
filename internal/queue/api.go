@@ -2,6 +2,7 @@ package queue
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"time"
 
@@ -78,6 +79,12 @@ func NewPublicStatus(o sqlc.Organization, board Board, now time.Time) PublicStat
 // viewer should not see through another's proxy.
 const apiMaxAge = 5
 
+// apiCacheControl is the header apiMaxAge is actually served as, built
+// once from the constant rather than written out beside it. The two were
+// previously separate literals, so raising the constant changed the
+// comment explaining the cache window and nothing about the cache window.
+var apiCacheControl = fmt.Sprintf("public, max-age=%d", apiMaxAge)
+
 // GetPublicAPIStatus serves one queue's live state as JSON.
 func (h *Handlers) GetPublicAPIStatus(w http.ResponseWriter, r *http.Request) {
 	pc, board, ok := h.publicBoard(w, r)
@@ -86,7 +93,7 @@ func (h *Handlers) GetPublicAPIStatus(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
-	w.Header().Set("Cache-Control", "public, max-age=5")
+	w.Header().Set("Cache-Control", apiCacheControl)
 	// Read-only, no personal data, no credentials accepted: a business
 	// putting its own waiting time on its own website should not need a
 	// proxy to do it. Nothing here is scoped to who is asking, so there is
