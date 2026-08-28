@@ -10,6 +10,7 @@ import {
   formatPrice,
   formatTime,
   isBefore,
+  wallClockTime,
 } from "./time";
 
 const MANILA = "Asia/Manila"; // UTC+8, no daylight saving
@@ -168,5 +169,36 @@ describe("formatPrice", () => {
 
   it("keeps the sub-unit digits a price needs", () => {
     expect(formatPrice(49999)).toContain("499.99");
+  });
+});
+
+describe("wallClockTime", () => {
+  // The server renders every instant in the organisation's zone before it
+  // goes on the wire, so the local part of the string is the business's
+  // own clock. Reading it is the only correct answer where the zone name
+  // is not on hand — which is every payload except the org summary.
+  it("renders the time the string names, whatever its offset", () => {
+    expect(wallClockTime("2026-04-02T10:00:00+08:00")).toBe("10:00 am");
+    expect(wallClockTime("2026-04-02T10:00:00-07:00")).toBe("10:00 am");
+    expect(wallClockTime("2026-04-02T10:00:00Z")).toBe("10:00 am");
+  });
+
+  // Constructing a Date and formatting it in UTC is the tempting version
+  // and it converts, so a Manila 10:00 comes out as 02:00.
+  it("does not convert the instant to UTC", () => {
+    expect(wallClockTime("2026-04-02T10:00:00+08:00")).not.toBe("2:00 am");
+    expect(formatTime("2026-04-02T10:00:00+08:00", "UTC")).toBe("2:00 am");
+  });
+
+  it("renders noon and midnight the way a person reads them", () => {
+    expect(wallClockTime("2026-04-02T00:05:00+08:00")).toBe("12:05 am");
+    expect(wallClockTime("2026-04-02T12:00:00+08:00")).toBe("12:00 pm");
+    expect(wallClockTime("2026-04-02T13:45:00+08:00")).toBe("1:45 pm");
+    expect(wallClockTime("2026-04-02T23:59:00+08:00")).toBe("11:59 pm");
+  });
+
+  it("renders something it cannot read as a dash", () => {
+    expect(wallClockTime("not a time")).toBe("—");
+    expect(wallClockTime("")).toBe("—");
   });
 });

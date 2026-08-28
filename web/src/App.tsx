@@ -1,7 +1,9 @@
 import { Navigate, Route, Routes } from "react-router-dom";
 
+import { DisplayPage } from "./pages/DisplayPage";
 import { NotFoundPage } from "./pages/NotFoundPage";
 import { QueueBoardPage } from "./pages/QueueBoardPage";
+import { TicketPage } from "./pages/TicketPage";
 
 // The URL space mirrors the server-rendered pages it sits beside, so a
 // customer holding either kind of link recognises the other:
@@ -22,6 +24,8 @@ export function App() {
     <Routes>
       <Route path="/" element={<Navigate to="/not-found" replace />} />
       <Route path="/:orgSlug/q/:queueSlug" element={<QueueBoardPage />} />
+      <Route path="/:orgSlug/q/:queueSlug/t/:ticketId" element={<TicketPage />} />
+      <Route path="/:orgSlug/q/:queueSlug/display" element={<DisplayPage />} />
       <Route path="*" element={<NotFoundPage />} />
     </Routes>
   );

@@ -142,6 +142,34 @@ export function formatPrice(cents: number, currency = "PHP"): string {
   }).format(cents / 100);
 }
 
+/**
+ * Renders the time of day an RFC 3339 string *names*, without needing to
+ * be told a zone.
+ *
+ * Every instant the API sends has already been rendered in the
+ * organisation's zone, so the local part of the string — the "10:00" in
+ * "2026-04-02T10:00:00+08:00" — is the business's own wall clock. Reading
+ * it directly is not a shortcut around formatTime; it is the only correct
+ * answer where the zone name is not on hand, which is every payload except
+ * the org summary.
+ *
+ * Constructing a Date and formatting it in UTC is the tempting version and
+ * it is wrong: that converts, so a Manila 10:00 comes out as 02:00. The
+ * offset in the string exists precisely so this conversion is unnecessary.
+ */
+export function wallClockTime(iso: string): string {
+  const match = /^\d{4}-\d{2}-\d{2}T(\d{2}):(\d{2})/.exec(iso);
+  if (!match) return "—";
+
+  const hour = Number(match[1]);
+  const minute = match[2];
+  if (!Number.isInteger(hour) || hour > 23 || minute === undefined) return "—";
+
+  const suffix = hour < 12 ? "am" : "pm";
+  const twelve = hour % 12 === 0 ? 12 : hour % 12;
+  return `${twelve}:${minute} ${suffix}`;
+}
+
 function parseInstant(iso: string): Date | null {
   const date = new Date(iso);
   return Number.isNaN(date.getTime()) ? null : date;
