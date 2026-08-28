@@ -29,6 +29,13 @@ import (
 // to run against a production database.
 const seedPassword = "password123"
 
+// webDevPort is where `make web-dev` serves the React front end. It is
+// duplicated from web/vite.config.ts because a Go binary reading a
+// TypeScript config to print a hint would be worse than a constant, and
+// the seed output says which command it belongs to so a reader who
+// changes one knows to change the other.
+const webDevPort = "5173"
+
 // seed populates the database with one worked-through organization: an
 // admin, two staff, services with weekly hours, a walk-in queue and a line
 // of customers partway through being served.
@@ -107,6 +114,13 @@ func seed(args []string) error {
 		return err
 	}
 
+	// The React front end runs on its own dev server and proxies /api
+	// back here, so its addresses are printed on a different port. They
+	// are printed at all because the alternative is a developer who has
+	// just seeded an org guessing at the URL shape, and the two halves of
+	// the product use different ones on purpose: the server-rendered
+	// pages are what a printed QR code should point at, and web/ is the
+	// same journeys for a front end.
 	fmt.Fprintf(os.Stdout, `seeded "%s"
 
   sign in    http://localhost:%s/login
@@ -119,6 +133,12 @@ func seed(args []string) error {
   queue JSON     http://localhost:%s/api/q/%s/%s
   online booking http://localhost:%s/book/%s
 
+  the same pages in the React front end (make web-dev, in another terminal):
+
+  front door     http://localhost:%s/%s
+  public board   http://localhost:%s/%s/q/%s
+  display screen http://localhost:%s/%s/q/%s/display
+
   %d appointments booked into the next free slots
 `,
 		orgRow.Name,
@@ -128,6 +148,9 @@ func seed(args []string) error {
 		cfg.Port, orgRow.Slug, queueSlug,
 		cfg.Port, orgRow.Slug, queueSlug,
 		cfg.Port, orgRow.Slug,
+		webDevPort, orgRow.Slug,
+		webDevPort, orgRow.Slug, queueSlug,
+		webDevPort, orgRow.Slug, queueSlug,
 		appointments,
 	)
 	return nil
