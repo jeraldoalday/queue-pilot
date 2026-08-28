@@ -1,1 +1,19 @@
-@import "tailwindcss";
+@import "tailwindcss" source(none);
+
+/*
+ * The templates are the only place a Tailwind class is written, so they
+ * are the only place scanned.
+ *
+ * Tailwind v4 otherwise detects sources automatically by walking up from
+ * this file, which reads the whole repository. That was harmless while the
+ * repository was Go and templates; it stopped being harmless the moment
+ * web/ arrived, because the scan then treats every identifier in the
+ * front end's TypeScript as a possible class name. A function called
+ * `ordinal` in web/src/lib/wait.ts is enough to add Tailwind's `.ordinal`
+ * utility to this stylesheet — a rule nothing renders, in a committed
+ * build artifact CI checks for drift, appearing and disappearing with a
+ * file the Go binary never sees.
+ *
+ * The path is relative to this file: css -> static -> web -> internal.
+ */
+@source "../../../**/*.templ";
