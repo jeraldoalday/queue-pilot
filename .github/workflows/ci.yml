@@ -107,3 +107,59 @@ jobs:
 
       - name: go test (integration)
         run: go test ./... -race -tags=integration -run Integration
+
+  # The front end is a separate job on purpose. It shares no build step
+  # with the Go one and needs no database, so running it alongside rather
+  # than after means a broken component test is reported in the same two
+  # minutes as a broken handler rather than after the Postgres service has
+  # finished starting.
+  web:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    defaults:
+      run:
+        working-directory: web
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+
+      # npm ci rather than npm install: it installs exactly the lockfile
+      # and fails if package.json has drifted from it, which is the whole
+      # reason the lockfile is committed.
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Unit and component tests
+        run: npm run test
+
+      - name: Build
+        run: npm run build
+
+      # Only the browsers the config actually launches. `--with-deps`
+      # installs the system libraries a headless Chromium needs on a bare
+      # runner, which is otherwise a failure that looks like a broken test.
+      - name: Install Playwright browsers
+        run: npx playwright install --with-deps chromium
+
+      - name: End-to-end tests
+        run: npm run test:e2e
+
+      # The report is only worth keeping when something failed — a green
+      # run's artefacts are never opened, and uploading them on every push
+      # is a minute per run spent on nothing.
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: playwright-report
+          path: web/playwright-report/
+          retention-days: 7

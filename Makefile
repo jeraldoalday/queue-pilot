@@ -1,6 +1,7 @@
 .PHONY: run dev docker-up docker-down migrate-up migrate-down migrate-create \
 	sqlc-generate templ-generate tailwind-build tailwind-watch test test-integration seed \
-	generate check check-all version build fmt
+	generate check check-all version build fmt \
+	web-install web-dev web-test web-e2e web-build web-check
 
 -include .env
 export
@@ -64,13 +65,13 @@ check: generate
 test:
 	go test ./... -race -short
 
-# check-all is check plus the integration tests, which need DATABASE_URL
-# to point at a migrated database. It is what to run before pushing
-# anything that touches a query, a transaction or a constraint — the
-# guarantees those carry (no double-booking, no duplicate ticket numbers,
-# one winner per status change, no cross-tenant reads) are only provable
-# against a real Postgres.
-check-all: check test-integration
+# check-all is check plus the front end and the integration tests. The
+# latter need DATABASE_URL to point at a migrated database. It is what to
+# run before pushing anything that touches a query, a transaction or a
+# constraint — the guarantees those carry (no double-booking, no duplicate
+# ticket numbers, one winner per status change, no cross-tenant reads) are
+# only provable against a real Postgres.
+check-all: check web-check test-integration
 
 # version prints the commit a build from this tree would identify itself
 # as — the same string /version serves and the startup log opens with.
@@ -86,6 +87,39 @@ build:
 
 test-integration:
 	go test ./... -race -run Integration -tags=integration
+
+# ---------------------------------------------------------------------------
+# The React front end, in web/.
+#
+# It talks to /api/v1 and nothing else, so it can be developed against a
+# running `make run` and deployed as static files behind the same hostname.
+# Its dev server proxies /api to :8080 so development is same-origin like
+# the intended deployment — see web/vite.config.ts.
+# ---------------------------------------------------------------------------
+
+web-install:
+	cd web && npm ci
+
+# web-dev needs `make run` in another terminal: the proxy has to have
+# something to proxy to.
+web-dev:
+	cd web && npm run dev
+
+web-test:
+	cd web && npm run test
+
+# The end-to-end tests answer the API in the browser, so this needs no
+# database and no server — only the browsers, which npx installs on first
+# run.
+web-e2e:
+	cd web && npm run test:e2e
+
+web-build:
+	cd web && npm run build
+
+# web-check is the front-end half of what CI runs.
+web-check:
+	cd web && npm run check
 
 seed:
 	go run ./cmd/queuepilot seed

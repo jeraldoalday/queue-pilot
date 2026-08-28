@@ -95,6 +95,27 @@ against the runtime's zone database rather than trusted; a typo would
 otherwise silently fall back to UTC. The public slug stays fixed across a
 rename, so a printed QR code keeps working.
 
+**A React front end.** `web/` is the customer's half of the product as a
+single-page app: the same board, ticket, waiting-room display, service
+list, booking flow and confirmation page, reading `/api/v1` and nothing
+else. It is additive — the server-rendered pages under `/q` and `/book`
+are unchanged and remain the ones a printed QR code should point at,
+because they need no build step and work with scripting switched off. The
+React app is for the cases those cannot serve: a business embedding
+booking in its own site, a lobby screen running someone else's shell, or
+anywhere the interaction wants to be richer than a form post.
+
+Three things about it are worth knowing before reading the code. The wait
+estimate is never recomputed on the client — `queue.Estimate` decides it
+and the API sends whole minutes, so the number on a phone and the number
+on the sign above the door come from one implementation. Every instant on
+the wire carries the organisation's own offset, and the front end renders
+the wall clock that offset names rather than converting it, so a clinic's
+10:00 is 10:00 to a customer reading from another continent. And the
+board never blanks while it refreshes: a failed poll leaves the last good
+numbers up with a note, because a screen that goes blank reads to a room
+as the queue being broken.
+
 ## Status
 
 Under active scaffold development, following a 14-day build plan (see
@@ -103,12 +124,50 @@ isolation, the appointment flow (staff-booked and customer-booked), the
 walk-in queue flow and the org dashboard are all in place and verified
 against a real Postgres instance.
 
+## The JSON API
+
+Everything a customer can do, as JSON under `/api/v1`. It follows the
+same rules the public pages do: the tenant is the `{org}` path segment
+and nothing else, a missing org and another business's queue answer 404
+identically so the URL space cannot be read as a customer list, the two
+writes share the public forms' rate limit, and reads are unlimited
+because the pages that call them poll by design.
+
+```
+GET  /api/v1/orgs/{org}                                  name, services, open lines
+GET  /api/v1/orgs/{org}/queues/{queue}                   one board, numbers included
+POST /api/v1/orgs/{org}/queues/{queue}/tickets           take a number
+GET  /api/v1/orgs/{org}/queues/{queue}/tickets/{id}      one customer's own number
+POST /api/v1/orgs/{org}/queues/{queue}/tickets/{id}/cancel   leave the line
+GET  /api/v1/orgs/{org}/services/{service}/slots?date=   the day's open times
+POST /api/v1/orgs/{org}/services/{service}/bookings      book one
+GET  /api/v1/orgs/{org}/appointments/{id}                one customer's own booking
+POST /api/v1/orgs/{org}/appointments/{id}/cancel         release it
+```
+
+Failures all take one shape — `{"error": {"code", "message"}}` — with a
+closed set of codes (`not_found`, `validation`, `queue_closed`,
+`slot_taken`, `too_soon`, `too_far_ahead`, `not_cancellable`,
+`rate_limited`, `internal`). The code is for a front end to branch on and
+the message is for a person to read, which is what lets a UI say "that
+time was just taken, here is what is left" without matching on English
+prose. An unknown path under `/api/v1/` answers with that envelope too,
+rather than falling through to an HTML page a JSON parser then misreports.
+
+Preflights are answered, so a cross-origin JSON `POST` works. Credentials
+are never allowed: no endpoint here reads a session, so "any origin"
+cannot mean "any origin acting as the signed-in user".
+
 ## Operating it
 
 - `GET /api/q/{org}/{queue}` — one queue's live state as JSON, described
   above. Unauthenticated, cacheable for five seconds, and served with
   `Access-Control-Allow-Origin: *` because a business embedding its own
-  waiting time in its own site should not need a proxy to do it.
+  waiting time in its own site should not need a proxy to do it. It is
+  the original published payload and is kept exactly as it was — the
+  `/api/v1` board nests it rather than reshaping it, because businesses
+  have embedded this URL and breaking it to tidy a route is not a trade
+  this app gets to make.
 - `GET /healthz` — readiness, including a database ping, so an
   orchestrator does not route traffic to an instance that cannot reach
   Postgres.
@@ -195,8 +254,38 @@ that the whole public booking flow works through the real router — the
 tests read the slot values off the rendered page and submit those — and
 that one org cannot read or modify another's data.
 
-`make check` runs everything CI does except the integration tests,
-including the generated-artifact drift checks. Run it before pushing.
+`make check` runs everything CI's Go job does except the integration
+tests, including the generated-artifact drift checks. Run it before
+pushing.
+
+### The front end
+
+```sh
+make web-install   # npm ci
+make run           # in one terminal: the Go server on :8080
+make web-dev       # in another: Vite on :5173, proxying /api to :8080
+make web-test      # Vitest — units, components, hooks
+make web-e2e       # Playwright — the customer journeys, in a browser
+make web-check     # typecheck + Vitest + build, the front-end half of CI
+```
+
+The dev server proxies `/api` rather than pointing at `localhost:8080`,
+so development is same-origin like the intended deployment. Developing
+against a cross-origin setup means every CORS mistake is found in
+production instead.
+
+Vitest covers the pure logic (wait wording, timezone handling, the client's
+status mapping and abort handling), the two hooks every page is built from,
+and each page against fixtures shaped like the real payloads. The wait
+table mirrors `internal/queue/wait_test.go` case for case, so the HTML
+board and the React one say the same sentence.
+
+Playwright drives the built app in Chromium and on a phone viewport, with
+the API answered at the network boundary — no database, no server. It
+covers what the Go tests cannot reach: getting from a QR code to a number
+in hand, the board following the queue without a reload, the back button
+not taking a second number, a slot lost mid-form being recoverable, and
+the whole booking flow read from a browser set to another timezone.
 
 ## Deployment notes
 
@@ -214,3 +303,10 @@ including the generated-artifact drift checks. Run it before pushing.
 - Static assets are embedded in the binary, so it can be run from any
   working directory. Rebuild after changing one — a stale binary serves
   the stale asset.
+- `web/dist` is a static bundle. Serve it from the same hostname as the
+  API and it needs no configuration at all — that is what the relative
+  `/api/v1` paths are for, and it is why the dev server proxies rather
+  than pointing at a port. Hosting it elsewhere works (the API allows any
+  origin and answers preflights) and needs `VITE_API_BASE_URL` set at
+  build time, but a hardcoded origin is the thing that breaks the day a
+  business puts the app on its own domain.
