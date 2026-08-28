@@ -377,6 +377,26 @@ button.danger {
 
 /* The waiting-room display fills whatever screen it is left on and shows
    numbers only — never a name, since a whole room reads it. */
+
+/* The number gets its own size here rather than inheriting the board's.
+   .now-serving is capped at 12rem, which is right inside a card on a
+   phone and badly wrong on a wall: on a 1920x1080 lobby screen that cap
+   left the number filling 18% of the height, on a page whose entire
+   purpose is being readable from the far side of a room.
+
+   min() of two viewport units rather than clamp() of one, because a
+   display is left on whatever screen a business already owns — a
+   landscape television, a portrait kiosk panel, a spare monitor — and
+   sizing on width alone overflows the short axis of half of them. */
+.display .now-serving .number {
+  font-size: min(48vh, 32vw);
+  line-height: 0.9;
+}
+
+.display .now-serving .label {
+  font-size: clamp(0.9rem, 3vmin, 2rem);
+}
+
 .display {
   min-height: 100dvh;
   display: grid;
