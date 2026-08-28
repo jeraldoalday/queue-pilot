@@ -134,8 +134,8 @@ func TestPublicStatusCarriesNoPersonalData(t *testing.T) {
 // the constant moved the documentation and left the header alone.
 func TestAPICacheControlIsBuiltFromTheDocumentedMaxAge(t *testing.T) {
 	want := "public, max-age=" + strconv.Itoa(apiMaxAge)
-	if apiCacheControl != want {
+	if APICacheControl != want {
 		t.Errorf("Cache-Control = %q, want %q — the header and the constant have drifted apart",
-			apiCacheControl, want)
+			APICacheControl, want)
 	}
 }

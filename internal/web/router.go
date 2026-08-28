@@ -7,6 +7,7 @@ import (
 
 	"github.com/jackc/pgx/v5/pgxpool"
 
+	"github.com/jeraldoalday/queuepilot/internal/api"
 	"github.com/jeraldoalday/queuepilot/internal/appointment"
 	"github.com/jeraldoalday/queuepilot/internal/auth"
 	"github.com/jeraldoalday/queuepilot/internal/availability"
@@ -33,6 +34,7 @@ type Server struct {
 	appointment  *appointment.Handlers
 	org          *org.Handlers
 	queue        *queue.Handlers
+	api          *api.Handlers
 	publicLimit  *ratelimit.Limiter
 }
 
@@ -50,6 +52,7 @@ func NewServer(cfg config.Config, log *slog.Logger, pool *pgxpool.Pool) *Server 
 		appointment:  appointment.NewHandlers(pool, log),
 		org:          org.NewHandlers(pool, log),
 		queue:        queue.NewHandlers(pool, log),
+		api:          api.NewHandlers(pool, log),
 		publicLimit:  ratelimit.New(publicBurst, publicInterval, clock.Real{}),
 	}
 }
@@ -167,6 +170,16 @@ func (s *Server) Routes() http.Handler {
 	// business its whole day rather than one number on a board.
 	mux.Handle("POST /book/{orgSlug}/{serviceSlug}", limitPublic(http.HandlerFunc(s.appointment.PostPublicBook)))
 	mux.Handle("POST /book/{orgSlug}/a/{appointmentID}/cancel", limitPublic(http.HandlerFunc(s.appointment.PostPublicCancel)))
+	// The JSON API, under a version so the payloads can change without
+	// breaking a front end pinned to the old ones. Every route here is
+	// unauthenticated and tenant-scoped by {orgSlug}, exactly like the
+	// public HTML above it — see internal/api for why that is safe.
+	//
+	// The two writes share the public forms' rate limit. They are the same
+	// two actions, reached by a different content type, and a limit one
+	// spelling of a request obeys while the other does not is not a limit.
+	mux.Handle("/api/v1/", CORS(s.apiRoutes(limitPublic)))
+
 	mux.HandleFunc("GET /q/{orgSlug}/{queueSlug}/t/{ticketID}", s.queue.GetPublicTicket)
 	mux.HandleFunc("GET /q/{orgSlug}/{queueSlug}/t/{ticketID}/status", s.queue.GetPublicTicketPartial)
 	// Leaving the line shares the join form's limit: both are writes a
@@ -187,6 +200,31 @@ func (s *Server) Routes() http.Handler {
 	// the response a handler is about to write, and so a 500 produced by
 	// RecoverPanic still carries them — an error page is a page.
 	return RequestID(AccessLog(s.log)(RecoverPanic(s.log)(SecurityHeaders(s.cfg.SessionCookieSecure)(mux))))
+}
+
+// apiRoutes is the JSON API's own mux, mounted whole so every route under
+// /api/v1/ shares one CORS wrapper rather than each remembering to carry
+// one. A path this mux does not know answers with the API's JSON 404
+// rather than the HTML router's page — a front end parsing an error should
+// not have to guess whether it got JSON.
+func (s *Server) apiRoutes(limitPublic func(http.Handler) http.Handler) http.Handler {
+	mux := http.NewServeMux()
+
+	mux.HandleFunc("GET /api/v1/orgs/{orgSlug}", s.api.GetOrg)
+
+	mux.HandleFunc("GET /api/v1/orgs/{orgSlug}/services/{serviceSlug}/slots", s.api.GetSlots)
+	mux.Handle("POST /api/v1/orgs/{orgSlug}/services/{serviceSlug}/bookings", limitPublic(http.HandlerFunc(s.api.PostBooking)))
+	mux.HandleFunc("GET /api/v1/orgs/{orgSlug}/appointments/{appointmentID}", s.api.GetAppointment)
+	mux.Handle("POST /api/v1/orgs/{orgSlug}/appointments/{appointmentID}/cancel", limitPublic(http.HandlerFunc(s.api.PostAppointmentCancel)))
+
+	mux.HandleFunc("GET /api/v1/orgs/{orgSlug}/queues/{queueSlug}", s.api.GetBoard)
+	mux.Handle("POST /api/v1/orgs/{orgSlug}/queues/{queueSlug}/tickets", limitPublic(http.HandlerFunc(s.api.PostTicket)))
+	mux.HandleFunc("GET /api/v1/orgs/{orgSlug}/queues/{queueSlug}/tickets/{ticketID}", s.api.GetTicket)
+	mux.Handle("POST /api/v1/orgs/{orgSlug}/queues/{queueSlug}/tickets/{ticketID}/cancel", limitPublic(http.HandlerFunc(s.api.PostTicketCancel)))
+
+	mux.HandleFunc("/api/v1/", s.api.NotFound)
+
+	return mux
 }
 
 // handleHealthz reports readiness, including DB connectivity, so an

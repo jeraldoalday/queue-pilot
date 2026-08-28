@@ -206,3 +206,13 @@ const maxBodyBytes = 16 << 10
 func (h *Handlers) badRequest(w http.ResponseWriter) {
 	h.writeError(w, http.StatusBadRequest, CodeValidation, "That request could not be read.")
 }
+
+// NotFound answers a path under /api/v1/ that no route matched.
+//
+// It exists so the API's 404 is JSON. Falling through to the HTML router's
+// http.NotFound would hand a front end a page where it expected an error
+// envelope, and the first thing that front end does with a body it cannot
+// parse is report the wrong failure.
+func (h *Handlers) NotFound(w http.ResponseWriter, r *http.Request) {
+	h.notFound(w)
+}

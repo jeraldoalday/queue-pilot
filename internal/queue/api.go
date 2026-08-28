@@ -79,11 +79,15 @@ func NewPublicStatus(o sqlc.Organization, board Board, now time.Time) PublicStat
 // viewer should not see through another's proxy.
 const apiMaxAge = 5
 
-// apiCacheControl is the header apiMaxAge is actually served as, built
+// APICacheControl is the header apiMaxAge is actually served as, built
 // once from the constant rather than written out beside it. The two were
 // previously separate literals, so raising the constant changed the
 // comment explaining the cache window and nothing about the cache window.
-var apiCacheControl = fmt.Sprintf("public, max-age=%d", apiMaxAge)
+//
+// It is exported because more than one endpoint serves this same board,
+// and a second copy of the literal would recreate exactly the drift the
+// constant exists to prevent.
+var APICacheControl = fmt.Sprintf("public, max-age=%d", apiMaxAge)
 
 // GetPublicAPIStatus serves one queue's live state as JSON.
 func (h *Handlers) GetPublicAPIStatus(w http.ResponseWriter, r *http.Request) {
@@ -93,7 +97,7 @@ func (h *Handlers) GetPublicAPIStatus(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
-	w.Header().Set("Cache-Control", apiCacheControl)
+	w.Header().Set("Cache-Control", APICacheControl)
 	// Read-only, no personal data, no credentials accepted: a business
 	// putting its own waiting time on its own website should not need a
 	// proxy to do it. Nothing here is scoped to who is asking, so there is
