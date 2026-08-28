@@ -1,6 +1,9 @@
 import { Navigate, Route, Routes } from "react-router-dom";
 
+import { AppointmentPage } from "./pages/AppointmentPage";
+import { BookPage } from "./pages/BookPage";
 import { DisplayPage } from "./pages/DisplayPage";
+import { OrgPage } from "./pages/OrgPage";
 import { NotFoundPage } from "./pages/NotFoundPage";
 import { QueueBoardPage } from "./pages/QueueBoardPage";
 import { TicketPage } from "./pages/TicketPage";
@@ -23,6 +26,9 @@ export function App() {
   return (
     <Routes>
       <Route path="/" element={<Navigate to="/not-found" replace />} />
+      <Route path="/:orgSlug" element={<OrgPage />} />
+      <Route path="/:orgSlug/book/:serviceSlug" element={<BookPage />} />
+      <Route path="/:orgSlug/appointments/:appointmentId" element={<AppointmentPage />} />
       <Route path="/:orgSlug/q/:queueSlug" element={<QueueBoardPage />} />
       <Route path="/:orgSlug/q/:queueSlug/t/:ticketId" element={<TicketPage />} />
       <Route path="/:orgSlug/q/:queueSlug/display" element={<DisplayPage />} />
