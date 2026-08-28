@@ -1,0 +1,442 @@
+/*
+ * One stylesheet, hand-written, no build step.
+ *
+ * The Go side builds Tailwind through a standalone binary specifically to
+ * avoid a Node toolchain; this front end already has one, so that argument
+ * does not carry over. What does carry over is that the CSS here is small
+ * enough to read in a sitting, and a customer-facing page that a shop
+ * leaves running on a lobby screen benefits more from being legible at
+ * three metres than from a utility class system.
+ *
+ * Colours are declared as tokens once and redefined for dark mode, so the
+ * waiting-room display picks up whatever the screen it is left on prefers.
+ */
+
+:root {
+  color-scheme: light dark;
+
+  --bg: #f6f7f9;
+  --surface: #ffffff;
+  --surface-sunken: #eef0f4;
+  --border: #d9dde5;
+  --text: #16181d;
+  --text-muted: #5b6472;
+  --accent: #1f5fd0;
+  --accent-contrast: #ffffff;
+  --ok: #17734a;
+  --warn: #8a5a05;
+  --danger: #a32218;
+
+  --radius: 12px;
+  --gap: 1rem;
+  --shadow: 0 1px 2px rgb(16 24 40 / 6%), 0 4px 12px rgb(16 24 40 / 5%);
+
+  --font: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue",
+    Arial, sans-serif;
+  --font-numeric: ui-monospace, "SF Mono", "Cascadia Mono", Menlo, monospace;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #0f1115;
+    --surface: #171a21;
+    --surface-sunken: #1f232c;
+    --border: #2b303b;
+    --text: #eef1f6;
+    --text-muted: #a2acbd;
+    --accent: #6f9dff;
+    --accent-contrast: #0f1115;
+    --ok: #4cc38a;
+    --warn: #e0a244;
+    --danger: #f07167;
+    --shadow: none;
+  }
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font);
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+}
+
+h1,
+h2,
+h3 {
+  line-height: 1.2;
+  margin: 0 0 0.5rem;
+}
+
+h1 {
+  font-size: 1.6rem;
+}
+
+h2 {
+  font-size: 1.2rem;
+}
+
+p {
+  margin: 0 0 0.75rem;
+}
+
+a {
+  color: var(--accent);
+}
+
+.page {
+  max-width: 44rem;
+  margin: 0 auto;
+  padding: 1.5rem 1rem 4rem;
+}
+
+.page--centred {
+  min-height: 100dvh;
+  display: grid;
+  place-items: center;
+}
+
+.page-header {
+  margin-bottom: 1.5rem;
+}
+
+.page-header .eyebrow {
+  color: var(--text-muted);
+  font-size: 0.85rem;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  margin: 0 0 0.25rem;
+}
+
+.card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+  padding: 1.25rem;
+  margin-bottom: var(--gap);
+}
+
+.card--message {
+  max-width: 30rem;
+  text-align: center;
+}
+
+.card--flush {
+  padding: 0;
+  overflow: hidden;
+}
+
+.stack > * + * {
+  margin-top: var(--gap);
+}
+
+.row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  align-items: center;
+}
+
+.row--between {
+  justify-content: space-between;
+}
+
+.muted {
+  color: var(--text-muted);
+}
+
+.small {
+  font-size: 0.875rem;
+}
+
+/* The now-serving number. It is the one thing a person reads from across
+   a room, so it is sized against the viewport rather than in a fixed
+   rem — a 24" lobby screen and a phone are the same page. */
+.now-serving {
+  text-align: center;
+  padding: 1.5rem 1rem;
+}
+
+.now-serving .label {
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  font-size: clamp(0.75rem, 1.2vw, 1rem);
+  margin: 0;
+}
+
+.now-serving .number {
+  font-family: var(--font-numeric);
+  font-size: clamp(3.5rem, 18vw, 12rem);
+  font-weight: 700;
+  line-height: 1;
+  margin: 0.25rem 0 0;
+  font-variant-numeric: tabular-nums;
+}
+
+.now-serving .number--empty {
+  color: var(--text-muted);
+}
+
+.stat-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(7rem, 1fr));
+  gap: 0.75rem;
+}
+
+.stat {
+  background: var(--surface-sunken);
+  border-radius: var(--radius);
+  padding: 0.75rem;
+  text-align: center;
+}
+
+.stat .value {
+  font-family: var(--font-numeric);
+  font-size: 1.6rem;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  display: block;
+}
+
+.stat .name {
+  color: var(--text-muted);
+  font-size: 0.8rem;
+}
+
+.number-list {
+  list-style: none;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin: 0;
+  padding: 0;
+}
+
+.number-list li {
+  font-family: var(--font-numeric);
+  font-variant-numeric: tabular-nums;
+  background: var(--surface-sunken);
+  border-radius: 8px;
+  padding: 0.35rem 0.7rem;
+  font-weight: 600;
+}
+
+.number-list li.is-mine {
+  background: var(--accent);
+  color: var(--accent-contrast);
+}
+
+.badge {
+  display: inline-block;
+  border-radius: 999px;
+  padding: 0.15rem 0.65rem;
+  font-size: 0.8rem;
+  font-weight: 600;
+  background: var(--surface-sunken);
+  color: var(--text-muted);
+}
+
+.badge--open {
+  background: color-mix(in srgb, var(--ok) 18%, transparent);
+  color: var(--ok);
+}
+
+.badge--closed {
+  background: color-mix(in srgb, var(--danger) 16%, transparent);
+  color: var(--danger);
+}
+
+.badge--warn {
+  background: color-mix(in srgb, var(--warn) 18%, transparent);
+  color: var(--warn);
+}
+
+label {
+  display: block;
+  font-weight: 600;
+  font-size: 0.9rem;
+  margin-bottom: 0.25rem;
+}
+
+input[type="text"],
+input[type="tel"],
+input[type="email"],
+input[type="date"],
+select {
+  width: 100%;
+  padding: 0.6rem 0.7rem;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface);
+  color: var(--text);
+  font: inherit;
+}
+
+.field + .field {
+  margin-top: 0.85rem;
+}
+
+.field .hint {
+  color: var(--text-muted);
+  font-size: 0.8rem;
+  margin: 0.25rem 0 0;
+}
+
+button {
+  font: inherit;
+  font-weight: 600;
+  padding: 0.6rem 1rem;
+  border-radius: 8px;
+  border: 1px solid transparent;
+  background: var(--accent);
+  color: var(--accent-contrast);
+  cursor: pointer;
+}
+
+button:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+button.secondary {
+  background: transparent;
+  border-color: var(--border);
+  color: var(--text);
+}
+
+button.danger {
+  background: transparent;
+  border-color: color-mix(in srgb, var(--danger) 45%, transparent);
+  color: var(--danger);
+}
+
+.slot-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(6.5rem, 1fr));
+  gap: 0.5rem;
+}
+
+.slot-grid button {
+  background: var(--surface);
+  border-color: var(--border);
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
+}
+
+.slot-grid button[aria-pressed="true"] {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--accent-contrast);
+}
+
+.notice {
+  border-radius: 8px;
+  padding: 0.7rem 0.85rem;
+  border: 1px solid var(--border);
+  background: var(--surface-sunken);
+  margin-bottom: var(--gap);
+}
+
+.notice--error {
+  border-color: color-mix(in srgb, var(--danger) 45%, transparent);
+  background: color-mix(in srgb, var(--danger) 10%, transparent);
+  color: var(--danger);
+}
+
+.link-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.link-list li + li {
+  border-top: 1px solid var(--border);
+}
+
+.link-list a {
+  display: block;
+  padding: 0.9rem 1.25rem;
+  text-decoration: none;
+  color: inherit;
+}
+
+.link-list a:hover {
+  background: var(--surface-sunken);
+}
+
+.link-list .title {
+  font-weight: 600;
+}
+
+/* The waiting-room display fills whatever screen it is left on and shows
+   numbers only — never a name, since a whole room reads it. */
+.display {
+  min-height: 100dvh;
+  display: grid;
+  grid-template-rows: auto 1fr auto;
+  padding: 2vmin 3vmin;
+  gap: 2vmin;
+}
+
+.display .display-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  font-size: clamp(1rem, 2.5vw, 2rem);
+}
+
+.display .display-main {
+  display: grid;
+  place-items: center;
+}
+
+.display .display-foot {
+  display: flex;
+  justify-content: center;
+  gap: 3vmin;
+  font-size: clamp(1rem, 2.2vw, 1.8rem);
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+/* A polling page must not announce every refresh to a screen reader, and
+   must not flash while it re-fetches. The only thing that changes on a
+   quiet refresh is the timestamp, which is why it is the only thing
+   marked polite. */
+.updated-at {
+  color: var(--text-muted);
+  font-size: 0.8rem;
+  text-align: center;
+  margin-top: 1rem;
+}
+
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+  border: 0;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .spinner {
+    animation: spin 0.9s linear infinite;
+  }
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
