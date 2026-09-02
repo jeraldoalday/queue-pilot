@@ -635,3 +635,65 @@ func TestIntegrationPublicQueueAPI(t *testing.T) {
 		t.Errorf("api for an unknown queue = %d, want 404", code)
 	}
 }
+
+// The front door for walk-ins: every open line, shortest wait first.
+//
+// It is worth an integration test rather than only the pure ordering one
+// because the page's job is to be the thing a customer can act on — the
+// list has to link to the boards, close a line has to remove it, and a
+// second org's lines must not appear on the first's page.
+func TestIntegrationPublicLinesPageListsAndLinksTheOpenLines(t *testing.T) {
+	srv := newTestServer(t)
+	tt := newTenant(t, srv, "Lines Org")
+
+	second, err := queue.Create(context.Background(), tt.pool, tt.orgID, queue.Input{Name: "Prescriptions"})
+	if err != nil {
+		t.Fatalf("create second queue: %v", err)
+	}
+
+	status, body := get(t, srv, "/q/"+tt.orgSlug)
+	if status != http.StatusOK {
+		t.Fatalf("lines page = %d, want 200", status)
+	}
+	for _, want := range []string{"Walk-ins", "Prescriptions", tt.boardPath(), "/q/" + tt.orgSlug + "/" + second.Slug} {
+		if !strings.Contains(body, want) {
+			t.Errorf("the lines page does not offer %q", want)
+		}
+	}
+	// It is read by whoever walks in, so it holds to the display's
+	// standard: numbers, never names.
+	if _, location := join(t, srv, tt.boardPath(), "Ada Lovelace"); location == "" {
+		t.Fatal("could not join the line to seed a customer")
+	}
+	_, withCustomer := get(t, srv, "/q/"+tt.orgSlug)
+	if strings.Contains(withCustomer, "Ada Lovelace") {
+		t.Error("the lines page names a customer")
+	}
+
+	// A closed line still answers on its own URL — a display in a room
+	// should say "closed" rather than go blank — but it is not a door to
+	// offer somebody looking for one to join.
+	if _, err := queue.Update(context.Background(), tt.pool, tt.orgID, db.UUIDString(second.ID), queue.Input{
+		Name:   "Prescriptions",
+		Active: false,
+	}); err != nil {
+		t.Fatalf("close the second queue: %v", err)
+	}
+	_, afterClosing := get(t, srv, "/q/"+tt.orgSlug)
+	if strings.Contains(afterClosing, "Prescriptions") {
+		t.Error("the lines page still offers a closed line")
+	}
+	if status, _ := get(t, srv, "/q/"+tt.orgSlug+"/"+second.Slug); status != http.StatusOK {
+		t.Errorf("the closed line's own board = %d, want 200", status)
+	}
+
+	// One org's page, like every other public page under /q.
+	other := newTenant(t, srv, "Lines Other Org")
+	_, otherBody := get(t, srv, "/q/"+other.orgSlug)
+	if strings.Contains(otherBody, "Prescriptions") {
+		t.Error("one org's lines page shows another org's queue")
+	}
+	if status, _ := get(t, srv, "/q/no-such-org"); status != http.StatusNotFound {
+		t.Errorf("an unknown org's lines page = %d, want 404", status)
+	}
+}

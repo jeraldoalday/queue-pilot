@@ -21,6 +21,7 @@ func TestRobotsTagFor(t *testing.T) {
 		{"the front page", "/", true},
 		{"a business's service list", "/book/acme-dental", true},
 		{"one service's picker", "/book/acme-dental/cleaning", true},
+		{"a business's list of open lines", "/q/acme-dental", true},
 		{"a queue's public board", "/q/acme-dental/walk-ins", true},
 		{"the waiting-room display", "/q/acme-dental/walk-ins/display", true},
 
@@ -40,6 +41,7 @@ func TestRobotsTagFor(t *testing.T) {
 		{"sign-in", "/login", false},
 		{"the JSON API", "/api/v1/orgs/acme-dental", false},
 		{"the board's polling partial", "/q/acme-dental/walk-ins/board", false},
+		{"the line list's polling partial", "/q/acme-dental/lines", false},
 		{"a path nobody has invented yet", "/something/new", false},
 	}
 

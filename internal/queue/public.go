@@ -47,6 +47,70 @@ func (h *Handlers) resolvePublic(ctx context.Context, orgSlug, queueSlug string)
 	return publicContext{orgRow: orgRow, queue: q, loc: loc, day: today(loc)}, nil
 }
 
+// GetPublicLines is a business's front door for walk-ins: every open line,
+// shortest wait first.
+//
+// The board at /q/{org}/{queue} answers "how long is this line", which is
+// the right page for a QR code beside one counter and the wrong one for
+// somebody standing in a doorway with two lines in front of them — it
+// assumes they have already chosen. This is the page they choose from.
+//
+// It carries no names and no ticket IDs. Whoever walks in reads it, so it
+// holds itself to the waiting-room display's standard rather than the
+// ticket page's.
+func (h *Handlers) GetPublicLines(w http.ResponseWriter, r *http.Request) {
+	pc, lines, ok := h.publicLines(w, r)
+	if !ok {
+		return
+	}
+
+	// The booking page is only offered when there is something to book.
+	// A link to an empty list reads as "we take appointments" and then
+	// says otherwise.
+	bookable, err := HasBookableServices(r.Context(), h.pool, db.UUIDString(pc.orgRow.ID))
+	if err != nil {
+		h.fail(w, "GetPublicLines: services", err)
+		return
+	}
+
+	render(w, r, PublicLinesPage(pc.orgRow, lines, bookable))
+}
+
+// GetPublicLinesPartial serves the list's own refresh. A page of waits
+// that was true when it opened is worse than no page: a customer joins
+// the line it recommended and finds it is now the long one.
+func (h *Handlers) GetPublicLinesPartial(w http.ResponseWriter, r *http.Request) {
+	pc, lines, ok := h.publicLines(w, r)
+	if !ok {
+		return
+	}
+	render(w, r, PublicLinesBody(pc.orgRow, lines))
+}
+
+// publicLines resolves the org and loads its open lines, which is
+// everything both handlers above share.
+//
+// It resolves the org directly rather than through resolvePublic: there is
+// no queue slug in this URL, and that is the whole difference between this
+// page and the board.
+func (h *Handlers) publicLines(w http.ResponseWriter, r *http.Request) (publicContext, []Line, bool) {
+	orgRow, err := org.BySlug(r.Context(), h.pool, r.PathValue("orgSlug"))
+	if err != nil {
+		h.publicError(w, r, err, "publicLines: org")
+		return publicContext{}, nil, false
+	}
+
+	loc := org.LocationOf(orgRow)
+	pc := publicContext{orgRow: orgRow, loc: loc, day: today(loc)}
+
+	lines, err := LoadDirectory(r.Context(), h.pool, db.UUIDString(orgRow.ID), pc.day)
+	if err != nil {
+		h.fail(w, "publicLines: directory", err)
+		return publicContext{}, nil, false
+	}
+	return pc, lines, true
+}
+
 // GetPublicBoard is the page a customer opens from a QR code: what is
 // being served now, how long the line is, and a form to join it.
 func (h *Handlers) GetPublicBoard(w http.ResponseWriter, r *http.Request) {

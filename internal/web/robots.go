@@ -56,11 +56,21 @@ func isIndexablePath(path string) bool {
 	case len(segments) >= 2 && segments[0] == "book":
 		return len(segments) == 2 || (len(segments) == 3 && segments[2] != "a")
 
-	// /q/{org}/{queue} and its waiting-room display. /q/{org}/{queue}/t/…
-	// is a customer's own ticket, and the board partial is a fragment
-	// with no page around it, so neither is offered.
-	case len(segments) >= 3 && segments[0] == "q":
-		return len(segments) == 3 || (len(segments) == 4 && segments[3] == "display")
+	// /q/{org} is the list of a business's open lines, /q/{org}/{queue}
+	// one line's board, and /q/{org}/{queue}/display the waiting-room
+	// screen. /q/{org}/{queue}/t/… is a customer's own ticket, and the
+	// partials are fragments with no page around them, so none of those
+	// is offered.
+	case len(segments) >= 2 && segments[0] == "q":
+		switch len(segments) {
+		case 2:
+			return true
+		case 3:
+			return segments[2] != "lines"
+		case 4:
+			return segments[3] == "display"
+		}
+		return false
 	}
 
 	return false

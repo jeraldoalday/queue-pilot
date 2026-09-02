@@ -155,6 +155,11 @@ func (s *Server) Routes() http.Handler {
 	// the {orgSlug} path segment, and every lookup below it is scoped by
 	// the org ID that resolves to — the same rule the authenticated side
 	// follows, with a different source for the tenant.
+	// A business's front door for walk-ins: every open line, shortest
+	// wait first. The board below is the page for somebody who has
+	// already chosen a line; this is the page they choose from.
+	mux.HandleFunc("GET /q/{orgSlug}", s.queue.GetPublicLines)
+	mux.HandleFunc("GET /q/{orgSlug}/lines", s.queue.GetPublicLinesPartial)
 	mux.HandleFunc("GET /q/{orgSlug}/{queueSlug}", s.queue.GetPublicBoard)
 	mux.HandleFunc("GET /q/{orgSlug}/{queueSlug}/board", s.queue.GetPublicBoardPartial)
 	mux.HandleFunc("GET /q/{orgSlug}/{queueSlug}/display", s.queue.GetPublicDisplay)
