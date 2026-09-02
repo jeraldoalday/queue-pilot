@@ -74,6 +74,7 @@ func (s *Server) Routes() http.Handler {
 
 	mux.Handle("GET /static/", staticHandler())
 
+	mux.HandleFunc("GET /robots.txt", s.handleRobots)
 	mux.HandleFunc("GET /healthz", s.handleHealthz)
 	mux.HandleFunc("GET /version", s.handleVersion)
 	mux.HandleFunc("GET /{$}", s.handleHome)

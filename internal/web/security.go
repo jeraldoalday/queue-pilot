@@ -70,6 +70,14 @@ func SecurityHeaders(secure bool) func(http.Handler) http.Handler {
 			// a page that never asks should not be able to start.
 			h.Set("Permissions-Policy", "camera=(), microphone=(), geolocation=(), interest-cohort=()")
 			h.Set("X-Frame-Options", frameOptionsFor(r))
+			// A customer's ticket and booking URLs are capabilities:
+			// holding one is permission to read that page and cancel from
+			// it. A crawler is a machine for copying URLs somewhere else,
+			// so every page but the handful a business wants found is
+			// marked not to be indexed. See robots.go for the rule.
+			if tag := robotsTagFor(r.URL.Path); tag != "" {
+				h.Set("X-Robots-Tag", tag)
+			}
 
 			if secure {
 				h.Set("Strict-Transport-Security", hstsValue)
