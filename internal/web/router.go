@@ -145,6 +145,10 @@ func (s *Server) Routes() http.Handler {
 	mux.HandleFunc("GET /book/{orgSlug}", s.appointment.GetPublicServices)
 	mux.HandleFunc("GET /book/{orgSlug}/{serviceSlug}", s.appointment.GetPublicBook)
 	mux.HandleFunc("GET /book/{orgSlug}/a/{appointmentID}", s.appointment.GetPublicAppointmentPage)
+	// The same booking as a file a calendar can read. It is a GET with no
+	// session, exactly like the page beside it, and it is what makes the
+	// booking survive the tab being closed.
+	mux.HandleFunc("GET /book/{orgSlug}/a/{appointmentID}/calendar.ics", s.appointment.GetPublicAppointmentICS)
 
 	// Public queue pages. These carry no session: the tenant comes from
 	// the {orgSlug} path segment, and every lookup below it is scoped by

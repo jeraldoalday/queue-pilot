@@ -11,6 +11,8 @@ import (
 	"github.com/jeraldoalday/queuepilot/internal/db"
 	"github.com/jeraldoalday/queuepilot/internal/db/sqlc"
 	"github.com/jeraldoalday/queuepilot/internal/org"
+	"github.com/jeraldoalday/queuepilot/internal/platform/httpx"
+	"github.com/jeraldoalday/queuepilot/internal/platform/icalendar"
 )
 
 // publicContext is a resolved public booking URL: which org, and what
@@ -144,6 +146,48 @@ func (h *Handlers) GetPublicAppointmentPage(w http.ResponseWriter, r *http.Reque
 	}
 
 	render(w, r, PublicAppointmentPage(pc.orgRow, appt, pc.loc, pc.now, ""))
+}
+
+// GetPublicAppointmentICS hands the booking over as a calendar file.
+//
+// It is the same booking as the page above, reached under the same
+// rules — the org from the slug, the appointment from an unguessable
+// UUID — and it exists because the page is only useful while the tab is
+// open. The appointment matters next Tuesday, to a phone.
+//
+// A cancelled booking is served rather than refused. The file is how a
+// calendar that already holds the event finds out it is off, and
+// AppointmentCalendar issues that copy as a cancellation with a higher
+// sequence so the client acts on it instead of ignoring it as a
+// duplicate.
+func (h *Handlers) GetPublicAppointmentICS(w http.ResponseWriter, r *http.Request) {
+	pc, err := h.resolvePublicOrg(r.Context(), r.PathValue("orgSlug"))
+	if err != nil {
+		h.publicError(w, r, err, "GetPublicAppointmentICS")
+		return
+	}
+
+	appt, err := GetPublicAppointment(r.Context(), h.pool, pc.orgID(), r.PathValue("appointmentID"))
+	if err != nil {
+		h.publicError(w, r, err, "GetPublicAppointmentICS: appointment")
+		return
+	}
+
+	page := httpx.AbsoluteURL(r, appointmentURL(pc.orgRow.Slug, db.UUIDString(appt.ID)))
+	cal := AppointmentCalendar(pc.orgRow, appt, page)
+
+	w.Header().Set("Content-Type", icalendar.ContentType)
+	// attachment rather than inline: a browser that renders this as text
+	// has taken a file meant for a calendar and shown it as gibberish.
+	w.Header().Set("Content-Disposition", `attachment; filename="`+CalendarFilename(pc.orgRow, appt, pc.loc)+`"`)
+	// The file names a customer and their appointment, and it changes
+	// when the booking does. Neither a shared cache nor the browser's own
+	// should keep a copy: a cancelled booking served from cache is an
+	// appointment somebody turns up for.
+	w.Header().Set("Cache-Control", "no-store")
+	if _, err := w.Write(cal.Bytes(pc.now)); err != nil {
+		h.log.Warn("GetPublicAppointmentICS: write", "error", err)
+	}
 }
 
 // PostPublicCancel releases a booking on its holder's behalf.
@@ -295,4 +339,12 @@ func bookURL(orgSlug, serviceSlug string) string {
 
 func appointmentURL(orgSlug, appointmentID string) string {
 	return "/book/" + orgSlug + "/a/" + appointmentID
+}
+
+// calendarURL is the .ics beside a confirmation page. It is a path
+// segment rather than a suffix on the appointment ID because the router
+// matches whole segments: "{appointmentID}.ics" would make the extension
+// part of the ID.
+func calendarURL(orgSlug, appointmentID string) string {
+	return appointmentURL(orgSlug, appointmentID) + "/calendar.ics"
 }

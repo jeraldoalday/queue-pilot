@@ -167,6 +167,25 @@ func postForm(t *testing.T, srv *httptest.Server, path string, form url.Values) 
 	return resp.StatusCode, resp.Header.Get("Location"), string(body)
 }
 
+// getResponse fetches a path and hands back the whole response, for the
+// tests that care about headers rather than only the body — a download is
+// as much its Content-Type and disposition as its bytes.
+func getResponse(t *testing.T, srv *httptest.Server, path string) (*http.Response, string) {
+	t.Helper()
+
+	resp, err := srv.Client().Get(srv.URL + path)
+	if err != nil {
+		t.Fatalf("GET %s: %v", path, err)
+	}
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		t.Fatalf("read body: %v", err)
+	}
+	return resp, string(body)
+}
+
 // The whole customer path in one test, because each step only means
 // anything if the one before it produced what it claimed: the service list
 // links to the picker, the picker's own slot value is accepted by the
@@ -361,5 +380,77 @@ func TestIntegrationInactiveServiceIsNotBookable(t *testing.T) {
 	_, body := get(t, srv, "/book/"+bt.orgSlug)
 	if strings.Contains(body, "Consultation") {
 		t.Error("the service list still offers a deactivated service")
+	}
+}
+
+// A confirmation page answers "when is my appointment" only while the tab
+// is open, so the booking is also served as a file a calendar can read.
+// This is the whole route through the real router: book, download, and
+// check the file says what the booking says.
+func TestIntegrationBookingIsDownloadableAsACalendarFile(t *testing.T) {
+	srv := newTestServer(t)
+	pool := testPool(t)
+	bt := newBookingTenant(t, pool, "Calendar Org")
+
+	_, body := get(t, srv, bt.bookPath())
+	slots := offeredSlots(t, body)
+	if len(slots) == 0 {
+		t.Fatal("no slots to work from")
+	}
+
+	_, location, _ := postForm(t, srv, bt.bookPath(), url.Values{
+		"slot":           {slots[0]},
+		"customer_name":  {"Grace Hopper"},
+		"customer_email": {"grace@example.test"},
+	})
+	appointmentID := location[strings.LastIndex(location, "/")+1:]
+
+	// The page offers the download, so a customer can actually find it.
+	_, page := get(t, srv, location)
+	if !strings.Contains(page, location+"/calendar.ics") {
+		t.Error("the confirmation page does not link to the calendar file")
+	}
+
+	resp, file := getResponse(t, srv, location+"/calendar.ics")
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("calendar download = %d, want 200", resp.StatusCode)
+	}
+	if ct := resp.Header.Get("Content-Type"); !strings.HasPrefix(ct, "text/calendar") {
+		t.Errorf("Content-Type = %q, want text/calendar", ct)
+	}
+	// Served as an attachment: a browser that renders this inline has
+	// shown a customer a screen of gibberish instead of adding an event.
+	if cd := resp.Header.Get("Content-Disposition"); !strings.HasPrefix(cd, "attachment;") {
+		t.Errorf("Content-Disposition = %q, want an attachment", cd)
+	}
+	// It names the customer's own booking and nobody else's, and it
+	// carries no personal detail — the same standard the waiting-room
+	// display holds.
+	for _, want := range []string{"BEGIN:VCALENDAR", "BEGIN:VEVENT", appointmentID + "@queuepilot", "DTSTART:", "STATUS:CONFIRMED"} {
+		if !strings.Contains(file, want) {
+			t.Errorf("calendar file is missing %q:\n%s", want, file)
+		}
+	}
+	if strings.Contains(file, "grace@example.test") {
+		t.Error("the calendar file carries the customer's email address")
+	}
+
+	// Cancelling has to reach the calendar the customer already added the
+	// event to, which is what the cancellation copy is for.
+	if status, _, _ := postForm(t, srv, location+"/cancel", url.Values{}); status != http.StatusSeeOther {
+		t.Fatalf("cancel = %d, want 303", status)
+	}
+	_, cancelled := getResponse(t, srv, location+"/calendar.ics")
+	if !strings.Contains(cancelled, "STATUS:CANCELLED") {
+		t.Errorf("the cancelled booking's file is not a cancellation:\n%s", cancelled)
+	}
+	if !strings.Contains(cancelled, "METHOD:CANCEL") {
+		t.Errorf("the cancelled booking's file has no CANCEL method:\n%s", cancelled)
+	}
+
+	// And it is one org's file, like everything else under /book.
+	other := newBookingTenant(t, pool, "Calendar Other Org")
+	if status, _ := get(t, srv, "/book/"+other.orgSlug+"/a/"+appointmentID+"/calendar.ics"); status != http.StatusNotFound {
+		t.Errorf("another org downloading this booking = %d, want 404", status)
 	}
 }

@@ -197,6 +197,15 @@ templ PublicAppointmentPage(o sqlc.Organization, appt sqlc.GetAppointmentWithNam
 					</p>
 				</form>
 			}
+			if Status(appt.Status) != StatusCancelled {
+				<a
+					href={ templ.SafeURL(calendarURL(o.Slug, db.UUIDString(appt.ID))) }
+					class="mt-4 block rounded-md border border-slate-300 px-4 py-2.5 text-center text-sm font-medium text-slate-700 hover:bg-slate-100"
+					download
+				>
+					Add to calendar
+				</a>
+			}
 			<p class="mt-6 text-center text-xs text-slate-500">
 				Keep this page's link. It is the only way back to this booking.
 			</p>
