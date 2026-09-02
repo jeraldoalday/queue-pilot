@@ -16,6 +16,7 @@ import (
 	sqlcgen "github.com/jeraldoalday/queuepilot/internal/db/sqlc"
 	"github.com/jeraldoalday/queuepilot/internal/org"
 	"github.com/jeraldoalday/queuepilot/internal/platform/clock"
+	"github.com/jeraldoalday/queuepilot/internal/platform/metrics"
 	"github.com/jeraldoalday/queuepilot/internal/platform/ratelimit"
 	"github.com/jeraldoalday/queuepilot/internal/queue"
 	"github.com/jeraldoalday/queuepilot/internal/session"
@@ -36,6 +37,11 @@ type Server struct {
 	queue        *queue.Handlers
 	api          *api.Handlers
 	publicLimit  *ratelimit.Limiter
+	// metrics is nil when METRICS_TOKEN is unset, and the middleware then
+	// leaves every request untouched rather than timing work nobody can
+	// read.
+	metrics   *metrics.Registry
+	startedAt time.Time
 }
 
 func NewServer(cfg config.Config, log *slog.Logger, pool *pgxpool.Pool) *Server {
@@ -54,7 +60,19 @@ func NewServer(cfg config.Config, log *slog.Logger, pool *pgxpool.Pool) *Server 
 		queue:        queue.NewHandlers(pool, log),
 		api:          api.NewHandlers(pool, log),
 		publicLimit:  ratelimit.New(publicBurst, publicInterval, clock.Real{}),
+		metrics:      newRegistry(cfg),
+		startedAt:    time.Now(),
 	}
+}
+
+// newRegistry returns a registry only when the endpoint that would expose
+// it is configured. Counting into a registry nothing can read is memory
+// spent on nothing.
+func newRegistry(cfg config.Config) *metrics.Registry {
+	if cfg.MetricsToken == "" {
+		return nil
+	}
+	return metrics.New()
 }
 
 // publicBurst and publicInterval bound how fast one client can take
@@ -75,6 +93,10 @@ func (s *Server) Routes() http.Handler {
 	mux.Handle("GET /static/", staticHandler())
 
 	mux.HandleFunc("GET /robots.txt", s.handleRobots)
+	// Off unless METRICS_TOKEN is set, and a 404 rather than a 401 when
+	// it is not: whether this deployment collects metrics is not
+	// something a stranger needs told.
+	mux.HandleFunc("GET /metrics", s.handleMetrics)
 	mux.HandleFunc("GET /healthz", s.handleHealthz)
 	mux.HandleFunc("GET /version", s.handleVersion)
 	mux.HandleFunc("GET /{$}", s.handleHome)
@@ -206,10 +228,13 @@ func (s *Server) Routes() http.Handler {
 	// saying it returned 500 rather than vanishing from the log entirely.
 	// RecoverPanic sits outside the mux, so a panic anywhere in a handler
 	// becomes a logged 500 rather than a dropped connection.
-	// SecurityHeaders is innermost of the four so its headers are set on
+	// Metrics sits inside RecoverPanic so a panicked request is counted
+	// as the 500 it became rather than not at all — an endpoint failing
+	// every time is exactly what a dashboard is for.
+	// SecurityHeaders is innermost so its headers are set on
 	// the response a handler is about to write, and so a 500 produced by
 	// RecoverPanic still carries them — an error page is a page.
-	return RequestID(AccessLog(s.log)(RecoverPanic(s.log)(SecurityHeaders(s.cfg.SessionCookieSecure)(mux))))
+	return RequestID(AccessLog(s.log)(RecoverPanic(s.log)(Metrics(s.metrics)(SecurityHeaders(s.cfg.SessionCookieSecure)(mux)))))
 }
 
 // limitAPI is the same limit the public forms carry, refused in the

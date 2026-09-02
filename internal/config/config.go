@@ -22,6 +22,13 @@ type Config struct {
 	// unlimited identities and defeat the limit entirely. It defaults to
 	// false so the unsafe setting is always a deliberate one.
 	TrustProxyHeaders bool
+	// MetricsToken gates /metrics. Empty — the default — turns the
+	// endpoint off entirely, which is deliberate: a scrape describes a
+	// business's day (how many people took a number, when the rush was)
+	// across every tenant at once, and that is not something to serve to
+	// whoever asks. Setting it is how an operator says they have
+	// somewhere private to scrape it from.
+	MetricsToken string
 }
 
 func Load() (Config, error) {
@@ -38,6 +45,7 @@ func Load() (Config, error) {
 		DatabaseURL:         dbURL,
 		SessionCookieSecure: env == "production",
 		TrustProxyHeaders:   getenv("TRUST_PROXY_HEADERS", "") == "true",
+		MetricsToken:        os.Getenv("METRICS_TOKEN"),
 	}, nil
 }
 
