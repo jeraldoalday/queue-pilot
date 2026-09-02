@@ -116,16 +116,25 @@ func AccessLog(log *slog.Logger) func(http.Handler) http.Handler {
 	}
 }
 
-// isPoll reports whether a path is one of the endpoints a page re-fetches
-// on a timer. These are matched by suffix because each exists under
-// several prefixes (a console board, a public board, a display, a ticket),
-// and the property that matters is the same for all of them: the request
-// was made by a timer, not by a person.
+// pollSuffixes are the endpoints a page re-fetches on a timer.
+//
+// They are matched by suffix because each exists under several prefixes (a
+// console board, a public board, a display, a ticket, a list of lines) and
+// the property that matters is the same for all of them: the request was
+// made by a timer, not by a person.
+//
+// Adding a polling page and forgetting to add it here is not a visible
+// failure — it is an access log that slowly fills with the same line
+// every fifteen seconds until nobody reads it, which is the state this
+// list exists to prevent.
+var pollSuffixes = []string{"/board", "/display/board", "/status", "/lines"}
+
+// isPoll reports whether a request is one of those refreshes.
 func isPoll(r *http.Request) bool {
 	if r.Method != http.MethodGet {
 		return false
 	}
-	for _, suffix := range []string{"/board", "/display/board", "/status"} {
+	for _, suffix := range pollSuffixes {
 		if strings.HasSuffix(r.URL.Path, suffix) {
 			return true
 		}

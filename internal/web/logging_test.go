@@ -203,6 +203,7 @@ func TestAccessLogLevelFollowsTheStatus(t *testing.T) {
 		{"a console poll", "/app/queues/abc/board", http.StatusOK, "DEBUG"},
 		{"a public display poll", "/q/acme/walk-ins/display/board", http.StatusOK, "DEBUG"},
 		{"a ticket poll", "/q/acme/walk-ins/t/abc/status", http.StatusOK, "DEBUG"},
+		{"the line list's poll", "/q/acme/lines", http.StatusOK, "DEBUG"},
 		{"a failing poll is still a failure", "/app/queues/abc/board", http.StatusInternalServerError, "ERROR"},
 	}
 
