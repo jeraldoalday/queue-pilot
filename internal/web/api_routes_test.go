@@ -6,9 +6,13 @@ import (
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
+	"strconv"
 	"testing"
+	"time"
 
 	"github.com/jeraldoalday/queuepilot/internal/api"
+	"github.com/jeraldoalday/queuepilot/internal/platform/clock"
+	"github.com/jeraldoalday/queuepilot/internal/platform/ratelimit"
 )
 
 // apiOnlyServer builds just enough Server to exercise the JSON API's
@@ -161,5 +165,78 @@ func TestAPICalendarRouteIsReachableAndUnlimited(t *testing.T) {
 	// board's are: a download is not what costs a business anything.
 	if limiterRan {
 		t.Error("a calendar download went through the rate limiter")
+	}
+}
+
+// Every failure this API produces is an error envelope with a code from a
+// closed set — except, until now, the one produced by middleware rather
+// than by a handler. A 429 arriving as plain text is the response a front
+// end is most likely to meet under load, and it was the one it had to
+// recognise from a bare status code.
+func TestAPIRateLimitRefusalIsTheErrorEnvelope(t *testing.T) {
+	s := apiOnlyServer()
+	s.publicLimit = ratelimit.New(1, time.Minute, clock.Real{})
+
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/orgs/demo/queues/walk-ins/tickets", http.NoBody)
+	// Spend the one token this client has, so the request below is
+	// refused by the limiter before it can reach the nil pool.
+	s.publicLimit.Allow(ratelimit.ClientKey(req, false))
+
+	rec := httptest.NewRecorder()
+	s.apiRoutes(s.limitAPI()).ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusTooManyRequests {
+		t.Fatalf("status = %d, want 429", rec.Code)
+	}
+	if ct := rec.Header().Get("Content-Type"); ct != "application/json; charset=utf-8" {
+		t.Errorf("Content-Type = %q, want JSON", ct)
+	}
+	// A well-behaved client backs off by the amount it is told, so the
+	// header has to survive the change of refusal. The limiter runs on the
+	// real clock here, so the wait is "most of a minute" rather than
+	// exactly one — what matters is that it is present and positive.
+	retry, err := strconv.Atoi(rec.Header().Get("Retry-After"))
+	if err != nil || retry < 1 || retry > 60 {
+		t.Errorf("Retry-After = %q, want a whole number of seconds up to 60", rec.Header().Get("Retry-After"))
+	}
+
+	var envelope struct {
+		Error api.Error `json:"error"`
+	}
+	if err := json.NewDecoder(rec.Body).Decode(&envelope); err != nil {
+		t.Fatalf("body was not the API's error envelope: %v", err)
+	}
+	if envelope.Error.Code != api.CodeRateLimited {
+		t.Errorf("code = %q, want %q", envelope.Error.Code, api.CodeRateLimited)
+	}
+	if envelope.Error.Message == "" {
+		t.Error("the envelope carries no message for a person to read")
+	}
+}
+
+// The API's writes and the public forms' draw on one allowance. They are
+// the same two actions in two spellings, and a script alternating between
+// them must not get twice the rate the limit claims to grant.
+func TestAPIAndFormsShareOneAllowance(t *testing.T) {
+	s := apiOnlyServer()
+	s.publicLimit = ratelimit.New(1, time.Minute, clock.Real{})
+
+	form := httptest.NewRequest(http.MethodPost, "/q/demo/walk-ins/tickets", http.NoBody)
+	formLimited := ratelimit.Middleware(s.publicLimit, false, s.log)(
+		http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(http.StatusOK) }))
+
+	rec := httptest.NewRecorder()
+	formLimited.ServeHTTP(rec, form)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("the form's first request = %d, want 200", rec.Code)
+	}
+
+	// Same client, same allowance, other spelling.
+	apiReq := httptest.NewRequest(http.MethodPost, "/api/v1/orgs/demo/queues/walk-ins/tickets", http.NoBody)
+	apiRec := httptest.NewRecorder()
+	s.apiRoutes(s.limitAPI()).ServeHTTP(apiRec, apiReq)
+
+	if apiRec.Code != http.StatusTooManyRequests {
+		t.Errorf("the API write after the form's = %d, want 429 — the two do not share a limiter", apiRec.Code)
 	}
 }

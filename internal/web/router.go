@@ -182,7 +182,7 @@ func (s *Server) Routes() http.Handler {
 	// The two writes share the public forms' rate limit. They are the same
 	// two actions, reached by a different content type, and a limit one
 	// spelling of a request obeys while the other does not is not a limit.
-	mux.Handle("/api/v1/", CORS(s.apiRoutes(limitPublic)))
+	mux.Handle("/api/v1/", CORS(s.apiRoutes(s.limitAPI())))
 
 	mux.HandleFunc("GET /q/{orgSlug}/{queueSlug}/t/{ticketID}", s.queue.GetPublicTicket)
 	mux.HandleFunc("GET /q/{orgSlug}/{queueSlug}/t/{ticketID}/status", s.queue.GetPublicTicketPartial)
@@ -204,6 +204,23 @@ func (s *Server) Routes() http.Handler {
 	// the response a handler is about to write, and so a 500 produced by
 	// RecoverPanic still carries them — an error page is a page.
 	return RequestID(AccessLog(s.log)(RecoverPanic(s.log)(SecurityHeaders(s.cfg.SessionCookieSecure)(mux))))
+}
+
+// limitAPI is the same limit the public forms carry, refused in the
+// API's own language.
+//
+// It shares the one Limiter rather than holding its own: the two writes
+// under /api/v1 are the same two actions the forms offer, and a script
+// that alternates between the two spellings of a request would otherwise
+// get twice the allowance the limit claims to grant.
+//
+// What differs is only the refusal. Every failure this API produces is an
+// error envelope with a code from a closed set, and a 429 that arrives as
+// plain text is the one exception — which leaves a front end guessing
+// from a status code under exactly the conditions the rest of the API was
+// designed to be legible in.
+func (s *Server) limitAPI() func(http.Handler) http.Handler {
+	return ratelimit.MiddlewareWith(s.publicLimit, s.cfg.TrustProxyHeaders, s.log, s.api.RateLimited)
 }
 
 // apiRoutes is the JSON API's own mux, mounted whole so every route under

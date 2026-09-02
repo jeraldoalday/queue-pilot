@@ -28,6 +28,7 @@ import (
 	"errors"
 	"log/slog"
 	"net/http"
+	"strconv"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -205,6 +206,26 @@ const maxBodyBytes = 16 << 10
 // value" is not something to show a customer.
 func (h *Handlers) badRequest(w http.ResponseWriter) {
 	h.writeError(w, http.StatusBadRequest, CodeValidation, "That request could not be read.")
+}
+
+// RateLimited answers a request the public limiter refused.
+//
+// It exists so that the one failure produced by middleware rather than by
+// a handler still arrives in the shape this API promises. The rest of the
+// closed code set is useless to a front end if the response it is most
+// likely to meet under load — everybody pressing "take a number" at
+// nine in the morning — is the one that arrives as plain text and has to
+// be recognised from a bare status code.
+//
+// The wait is repeated in the message because Retry-After is a header a
+// front end has to go looking for, and a customer reads the sentence.
+func (h *Handlers) RateLimited(w http.ResponseWriter, _ *http.Request, retryAfterSeconds int) {
+	message := "That was a lot of requests at once. Please try again in a few seconds."
+	if retryAfterSeconds > 1 {
+		message = "That was a lot of requests at once. Please try again in " +
+			strconv.Itoa(retryAfterSeconds) + " seconds."
+	}
+	h.writeError(w, http.StatusTooManyRequests, CodeRateLimited, message)
 }
 
 // NotFound answers a path under /api/v1/ that no route matched.

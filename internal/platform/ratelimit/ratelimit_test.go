@@ -5,6 +5,7 @@ import (
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -281,5 +282,67 @@ func TestConcurrentAllowIsSafe(t *testing.T) {
 	}
 	for i := 0; i < 8; i++ {
 		<-done
+	}
+}
+
+// The refusal is pluggable because "too many requests" has to be said in
+// the language the caller is speaking: a page for a form post, an error
+// envelope for the JSON API.
+func TestMiddlewareWithUsesTheCallersRefusal(t *testing.T) {
+	var gotSeconds int
+	deny := func(w http.ResponseWriter, r *http.Request, retryAfterSeconds int) {
+		gotSeconds = retryAfterSeconds
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusTooManyRequests)
+		w.Write([]byte(`{"error":{"code":"rate_limited"}}`))
+	}
+
+	// One token, refilling once a minute: the second request is refused
+	// and has most of a minute to wait.
+	limiter := New(1, time.Minute, newTestClock())
+	handler := MiddlewareWith(limiter, false, slog.New(slog.NewTextHandler(io.Discard, nil)), deny)(http.HandlerFunc(
+		func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(http.StatusOK) }))
+
+	first := httptest.NewRecorder()
+	handler.ServeHTTP(first, httptest.NewRequest(http.MethodPost, "/q/demo/walk-ins/tickets", nil))
+	if first.Code != http.StatusOK {
+		t.Fatalf("first request = %d, want 200", first.Code)
+	}
+
+	second := httptest.NewRecorder()
+	handler.ServeHTTP(second, httptest.NewRequest(http.MethodPost, "/q/demo/walk-ins/tickets", nil))
+
+	if second.Code != http.StatusTooManyRequests {
+		t.Fatalf("second request = %d, want 429", second.Code)
+	}
+	if ct := second.Header().Get("Content-Type"); ct != "application/json" {
+		t.Errorf("Content-Type = %q — the caller's refusal did not write the body", ct)
+	}
+	// Retry-After is set by the middleware, not by the refusal, so both
+	// spellings of the wait come from one calculation.
+	if retry := second.Header().Get("Retry-After"); retry != "60" {
+		t.Errorf("Retry-After = %q, want 60", retry)
+	}
+	if gotSeconds != 60 {
+		t.Errorf("the refusal was handed %d seconds, want the 60 in the header", gotSeconds)
+	}
+}
+
+// A nil refusal is a programming slip, not a request to answer nothing at
+// all: it falls back to the default rather than panicking mid-request.
+func TestMiddlewareWithNilDenyFallsBackToThePlainRefusal(t *testing.T) {
+	handler := MiddlewareWith(New(1, time.Minute, newTestClock()), false, slog.New(slog.NewTextHandler(io.Discard, nil)), nil)(http.HandlerFunc(
+		func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(http.StatusOK) }))
+
+	req := httptest.NewRequest(http.MethodPost, "/q/demo/walk-ins/tickets", nil)
+	handler.ServeHTTP(httptest.NewRecorder(), req)
+
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+	if rec.Code != http.StatusTooManyRequests {
+		t.Fatalf("second request = %d, want 429", rec.Code)
+	}
+	if body := rec.Body.String(); !strings.Contains(body, "Too many requests") {
+		t.Errorf("body = %q, want the default sentence", body)
 	}
 }
