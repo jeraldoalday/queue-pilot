@@ -73,6 +73,22 @@ export function AppointmentPage() {
         </p>
       </section>
 
+      {/* An ordinary link, not a fetch. The browser downloads the file,
+          names it from the header the API sets, and hands it to whatever
+          opens calendar files on this device — all of which a blob and a
+          synthesised click would take over and get wrong. It is offered
+          only while the booking stands: a cancelled one still has a file,
+          because that file is how a calendar already holding the event
+          finds out it is off, but "add to calendar" is not what a customer
+          reading a cancellation is looking for. */}
+      {a.status === "booked" ? (
+        <p>
+          <a className="button-link" href={api.appointmentCalendarUrl(orgSlug, appointmentId)}>
+            Add to calendar
+          </a>
+        </p>
+      ) : null}
+
       {a.status !== "booked" ? (
         <section className="card">
           <h2>{statusHeading(a.status)}</h2>

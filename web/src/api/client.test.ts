@@ -204,3 +204,20 @@ describe("aborting", () => {
     expect(err).not.toBeInstanceOf(ApiError);
   });
 });
+
+describe("appointmentCalendarUrl", () => {
+  it("addresses the booking's calendar file", () => {
+    expect(api.appointmentCalendarUrl("demo", "22222222-2222-2222-2222-222222222222")).toBe(
+      "/api/v1/orgs/demo/appointments/22222222-2222-2222-2222-222222222222/calendar.ics",
+    );
+  });
+
+  // The same rule every other path here follows: a slug is
+  // business-supplied and an ID arrives from a URL the customer may have
+  // edited, so neither may change which endpoint is addressed.
+  it("encodes both segments", () => {
+    expect(api.appointmentCalendarUrl("a/b", "../secret")).toBe(
+      "/api/v1/orgs/a%2Fb/appointments/..%2Fsecret/calendar.ics",
+    );
+  });
+});

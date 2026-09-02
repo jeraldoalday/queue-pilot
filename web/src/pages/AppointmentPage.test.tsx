@@ -141,3 +141,29 @@ describe("AppointmentPage", () => {
     ).toBeInTheDocument();
   });
 });
+
+describe("AppointmentPage calendar download", () => {
+  // A confirmation page is only open for as long as the tab is. The
+  // download is what puts the time somewhere it will still be answered
+  // next Tuesday.
+  it("offers the booking as a calendar file", async () => {
+    renderAppointment();
+
+    const link = await screen.findByRole("link", { name: "Add to calendar" });
+    expect(link).toHaveAttribute(
+      "href",
+      "/api/v1/orgs/demo/appointments/22222222-2222-2222-2222-222222222222/calendar.ics",
+    );
+  });
+
+  // A cancelled booking still has a file — that file is how a calendar
+  // already holding the event finds out it is off — but "add to calendar"
+  // is not what somebody reading a cancellation came for.
+  it("does not offer it for a booking that is no longer on", async () => {
+    appointmentMock.mockResolvedValue(appointment({ status: "cancelled", cancellable: false }));
+    renderAppointment();
+
+    expect(await screen.findByRole("heading", { name: /cancelled/i })).toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: "Add to calendar" })).not.toBeInTheDocument();
+  });
+});

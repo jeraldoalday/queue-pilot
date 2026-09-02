@@ -317,6 +317,24 @@ button.danger {
   color: var(--danger);
 }
 
+/* A link that has to look like a button, because what it does — download
+   a file — is an action rather than navigation. It stays an <a> so the
+   browser handles the download itself, keeping the filename the API sent. */
+.button-link {
+  display: inline-block;
+  font-weight: 600;
+  padding: 0.6rem 1rem;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  color: var(--text);
+  text-decoration: none;
+}
+
+.button-link:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
 .slot-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(6.5rem, 1fr));

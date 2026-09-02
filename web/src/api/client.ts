@@ -249,6 +249,20 @@ export const api = {
     });
   },
 
+  /**
+   * The address of a booking's calendar file.
+   *
+   * This is a URL rather than a fetch on purpose. The response is meant
+   * for the operating system, not for this app: an ordinary link lets the
+   * browser download it, name it from the Content-Disposition header the
+   * API sets, and hand it to whatever handles calendar files on that
+   * device. Fetching it into a blob and synthesising a click would take
+   * all of that over, and get the filename wrong.
+   */
+  appointmentCalendarUrl(orgSlug: string, appointmentId: string): string {
+    return `${BASE}/api/v1/orgs/${encode(orgSlug)}/appointments/${encode(appointmentId)}/calendar.ics`;
+  },
+
   cancelAppointment(
     orgSlug: string,
     appointmentId: string,
