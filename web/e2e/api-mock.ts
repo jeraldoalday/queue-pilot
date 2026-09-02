@@ -225,6 +225,30 @@ export async function mockApi(page: Page, overrides: Partial<MockState> = {}) {
       return json(route, appointmentPayload(state), 201);
     }
 
+    // The calendar file is the one response that is not JSON. It is
+    // answered here as text/calendar so the browser treats it the way it
+    // would in production — as a download rather than as a page.
+    if (/\/appointments\/[^/]+\/calendar\.ics$/.test(path)) {
+      return route.fulfill({
+        status: 200,
+        headers: {
+          "content-type": "text/calendar; charset=utf-8",
+          "content-disposition": 'attachment; filename="demo-clinic-2026-04-02.ics"',
+        },
+        body: [
+          "BEGIN:VCALENDAR",
+          "VERSION:2.0",
+          "BEGIN:VEVENT",
+          `UID:${state.appointment.id}@queuepilot`,
+          "DTSTART:20260402T020000Z",
+          "SUMMARY:Consultation at Demo Clinic",
+          "END:VEVENT",
+          "END:VCALENDAR",
+          "",
+        ].join("\r\n"),
+      });
+    }
+
     if (/\/appointments\/[^/]+\/cancel$/.test(path) && method === "POST") {
       state.appointment = { ...state.appointment, status: "cancelled", cancellable: false };
       return json(route, appointmentPayload(state));

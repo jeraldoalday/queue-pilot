@@ -136,3 +136,36 @@ test("an unknown business says nothing about which businesses exist", async ({ p
   await expect(page.getByRole("heading", { name: /couldn.t find that page/i })).toBeVisible();
   await expect(page.locator("body")).not.toContainText(/organisation|organization|tenant/i);
 });
+
+/**
+ * The confirmation page is open for as long as the tab is; the
+ * appointment matters next Tuesday. This is the path that puts it
+ * somewhere it will still be answered — and it is a real download in a
+ * real browser, which is the part no unit test can stand in for.
+ */
+test("a customer can take their booking away as a calendar file", async ({ page }) => {
+  await mockApi(page);
+
+  await page.goto("/demo/appointments/22222222-2222-2222-2222-222222222222");
+
+  const [download] = await Promise.all([
+    page.waitForEvent("download"),
+    page.getByRole("link", { name: "Add to calendar" }).click(),
+  ]);
+
+  // The browser names the file from the header the API sent. Getting this
+  // wrong is how every appointment lands in a downloads folder under one
+  // invented name.
+  expect(download.suggestedFilename()).toBe("demo-clinic-2026-04-02.ics");
+
+  const stream = await download.createReadStream();
+  const chunks: Buffer[] = [];
+  for await (const chunk of stream) chunks.push(Buffer.from(chunk));
+  const file = Buffer.concat(chunks).toString("utf8");
+
+  expect(file).toContain("BEGIN:VEVENT");
+  expect(file).toContain("22222222-2222-2222-2222-222222222222@queuepilot");
+  // The page is still there behind the download: a customer who saves the
+  // file has not been navigated away from their own booking.
+  await expect(page.getByRole("heading", { name: "Consultation" })).toBeVisible();
+});
