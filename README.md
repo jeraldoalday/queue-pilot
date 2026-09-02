@@ -142,6 +142,7 @@ POST /api/v1/orgs/{org}/queues/{queue}/tickets/{id}/cancel   leave the line
 GET  /api/v1/orgs/{org}/services/{service}/slots?date=   the day's open times
 POST /api/v1/orgs/{org}/services/{service}/bookings      book one
 GET  /api/v1/orgs/{org}/appointments/{id}                one customer's own booking
+GET  /api/v1/orgs/{org}/appointments/{id}/calendar.ics   the same booking, as a calendar file
 POST /api/v1/orgs/{org}/appointments/{id}/cancel         release it
 ```
 
@@ -152,11 +153,25 @@ closed set of codes (`not_found`, `validation`, `queue_closed`,
 the message is for a person to read, which is what lets a UI say "that
 time was just taken, here is what is left" without matching on English
 prose. An unknown path under `/api/v1/` answers with that envelope too,
-rather than falling through to an HTML page a JSON parser then misreports.
+rather than falling through to an HTML page a JSON parser then misreports
+— and so does a request the rate limiter refuses, which is middleware
+rather than a handler and used to arrive as plain text with only its
+status to identify it.
+
+The one exception to "everything is JSON" is `calendar.ics`, which
+answers `text/calendar` because the point of that response is that it can
+be handed straight to the operating system. A front end could assemble
+the file itself, and that is exactly what this avoids: a second
+implementation of iCalendar's escaping and folding rules is how the two
+ends of a product come to disagree about what a customer's appointment
+says. Its failures still take the envelope's shape.
 
 Preflights are answered, so a cross-origin JSON `POST` works. Credentials
 are never allowed: no endpoint here reads a session, so "any origin"
-cannot mean "any origin acting as the signed-in user".
+cannot mean "any origin acting as the signed-in user". `Content-Disposition`
+is exposed, because a browser otherwise hides the download's filename from
+the page that asked for it and every appointment saves under one invented
+name.
 
 ## Operating it
 
@@ -168,6 +183,21 @@ cannot mean "any origin acting as the signed-in user".
   `/api/v1` board nests it rather than reshaping it, because businesses
   have embedded this URL and breaking it to tidy a route is not a trade
   this app gets to make.
+- `GET /metrics` — a request counter and a duration histogram per route,
+  method and status, plus the build and uptime, in Prometheus' text
+  format. It is off unless `METRICS_TOKEN` is set, and a request without
+  that bearer token answers 404 rather than 401: request counts per route
+  describe every tenant's day at once, and whether a deployment collects
+  them is not a stranger's business either. The route label is a template
+  (`/q/:org/:queue`), never a path — a series exists per distinct label
+  combination, so counting real paths would mint one per queue per org,
+  driven by strangers, growing until the process restarts.
+- `GET /robots.txt`, and `X-Robots-Tag: noindex` on every response but
+  the handful of pages a business wants found. A customer's ticket and
+  confirmation URLs are capabilities — holding one is permission to read
+  the page and cancel from it — and a crawler is a machine for copying
+  URLs somewhere else. The rule is closed by default, so a route added
+  later is private until somebody decides otherwise.
 - `GET /healthz` — readiness, including a database ping, so an
   orchestrator does not route traffic to an instance that cannot reach
   Postgres.
@@ -258,6 +288,13 @@ that one org cannot read or modify another's data.
 tests, including the generated-artifact drift checks. Run it before
 pushing.
 
+The iCalendar writer is tested against what importers are unforgiving
+about rather than against a golden file: CRLF breaks, folding at 75
+octets without splitting a UTF-8 rune, escaped TEXT values, and a value
+carrying a newline being unable to end its own line and start a property
+of its choosing — customers type their own names, so that last one is
+reachable.
+
 ### The front end
 
 ```sh
@@ -284,8 +321,10 @@ Playwright drives the built app in Chromium and on a phone viewport, with
 the API answered at the network boundary — no database, no server. It
 covers what the Go tests cannot reach: getting from a QR code to a number
 in hand, the board following the queue without a reload, the back button
-not taking a second number, a slot lost mid-form being recoverable, and
-the whole booking flow read from a browser set to another timezone.
+not taking a second number, a slot lost mid-form being recoverable, the
+whole booking flow read from a browser set to another timezone, and the
+calendar download arriving as a real file under the name the API asked
+for.
 
 ## Deployment notes
 
