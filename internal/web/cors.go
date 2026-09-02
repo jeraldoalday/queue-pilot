@@ -38,6 +38,14 @@ const (
 	// authentication scheme that does not exist.
 	corsAllowedHeaders = "Content-Type"
 
+	// corsExposedHeaders is what a cross-origin caller may read off a
+	// response. By default a browser hands JavaScript almost nothing, and
+	// the calendar download's filename lives in Content-Disposition — a
+	// front end saving that file without it has to invent a name, and
+	// every appointment lands in the customer's downloads folder as the
+	// same one.
+	corsExposedHeaders = "Content-Disposition"
+
 	// corsMaxAge is how long a browser may skip re-asking. A day is the
 	// usual ceiling browsers will honour, and the answer is a constant:
 	// there is no per-origin decision here that could go stale sooner.
@@ -54,6 +62,7 @@ func CORS(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		h := w.Header()
 		h.Set("Access-Control-Allow-Origin", "*")
+		h.Set("Access-Control-Expose-Headers", corsExposedHeaders)
 
 		if r.Method == http.MethodOptions && r.Header.Get("Access-Control-Request-Method") != "" {
 			h.Set("Access-Control-Allow-Methods", corsAllowedMethods)

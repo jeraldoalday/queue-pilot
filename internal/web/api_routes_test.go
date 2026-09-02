@@ -127,3 +127,39 @@ func TestAPIPreflightIsAnsweredForUnknownPathsToo(t *testing.T) {
 		t.Errorf("status = %d (%s), want 204", rec.Code, body)
 	}
 }
+
+// The calendar file is the one response under /api/v1 that is not JSON,
+// so it is the one most likely to be dropped by a change to the API's
+// routing table. This asserts it is routed at all — the file's contents
+// are the appointment package's own tests.
+func TestAPICalendarRouteIsReachableAndUnlimited(t *testing.T) {
+	limiterRan := false
+	recordLimit := func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			limiterRan = true
+			next.ServeHTTP(w, r)
+		})
+	}
+
+	routes := apiOnlyServer().apiRoutes(recordLimit)
+	path := "/api/v1/orgs/demo/appointments/11111111-1111-1111-1111-111111111111/calendar.ics"
+
+	// The handler queries the nil pool, so the request is stopped by the
+	// panic that raises rather than by a missing route. What matters here
+	// is that it got past the mux: an unrouted path answers the API's JSON
+	// 404 without panicking at all.
+	panicked := false
+	func() {
+		defer func() { panicked = recover() != nil }()
+		routes.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest(http.MethodGet, path, nil))
+	}()
+
+	if !panicked {
+		t.Error("the calendar path did not reach a handler — it fell through to the API's 404")
+	}
+	// It is a read, and reads are unlimited here for the same reason the
+	// board's are: a download is not what costs a business anything.
+	if limiterRan {
+		t.Error("a calendar download went through the rate limiter")
+	}
+}

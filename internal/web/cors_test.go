@@ -144,3 +144,18 @@ func TestCORSMaxAgeStaysWithinWhatBrowsersHonour(t *testing.T) {
 		t.Errorf("corsMaxAge = %v, longer than the 24h browsers will honour", corsMaxAge)
 	}
 }
+
+// A browser hands cross-origin JavaScript almost no response headers by
+// default. The calendar download's filename lives in one of them, and a
+// front end that cannot read it saves every appointment under the same
+// invented name.
+func TestCORSExposesTheDownloadFilename(t *testing.T) {
+	rec := httptest.NewRecorder()
+	CORS(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Disposition", `attachment; filename="acme-2026-03-10.ics"`)
+	})).ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/api/v1/orgs/demo", nil))
+
+	if got := rec.Header().Get("Access-Control-Expose-Headers"); got != "Content-Disposition" {
+		t.Errorf("Access-Control-Expose-Headers = %q, want Content-Disposition", got)
+	}
+}

@@ -406,3 +406,83 @@ func TestIntegrationAPIAgreesWithThePublishedBoardEndpoint(t *testing.T) {
 			got, v1.Queue.EstimatedWaitMinutes)
 	}
 }
+
+// The API's one non-JSON response, end to end: book over JSON, then
+// download the booking as a file a calendar can read.
+//
+// It is worth an integration test rather than only a routing one because
+// the thing that would break it is not the file — the appointment package
+// tests that — but the response around it: the wrong content type, a
+// missing CORS header, or a front end that cannot read the filename.
+func TestIntegrationAPIServesTheBookingAsACalendarFile(t *testing.T) {
+	srv := newTestServer(t)
+	pool := testPool(t)
+	bt := newBookingTenant(t, pool, "API Calendar Org")
+
+	var slots struct {
+		Slots []struct {
+			Token string `json:"token"`
+		} `json:"slots"`
+	}
+	if status := apiGet(t, srv, "/api/v1/orgs/"+bt.orgSlug+"/services/"+bt.serviceSlug+"/slots", &slots); status != http.StatusOK {
+		t.Fatalf("slots = %d, want 200", status)
+	}
+	if len(slots.Slots) == 0 {
+		t.Fatal("no slots to book")
+	}
+
+	var booked struct {
+		ID string `json:"id"`
+	}
+	if status := apiPost(t, srv, "/api/v1/orgs/"+bt.orgSlug+"/services/"+bt.serviceSlug+"/bookings", map[string]string{
+		"slot":           slots.Slots[0].Token,
+		"customer_name":  "Katherine Johnson",
+		"customer_email": "katherine@example.test",
+	}, &booked); status != http.StatusCreated {
+		t.Fatalf("booking = %d, want 201", status)
+	}
+
+	req, err := http.NewRequest(http.MethodGet,
+		srv.URL+"/api/v1/orgs/"+bt.orgSlug+"/appointments/"+booked.ID+"/calendar.ics", nil)
+	if err != nil {
+		t.Fatalf("request: %v", err)
+	}
+	// A front end on its own domain is the caller this route exists for.
+	req.Header.Set("Origin", "https://book.example.com")
+	resp, err := srv.Client().Do(req)
+	if err != nil {
+		t.Fatalf("GET calendar: %v", err)
+	}
+	defer resp.Body.Close()
+	file, err := io.ReadAll(resp.Body)
+	if err != nil {
+		t.Fatalf("read calendar: %v", err)
+	}
+
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("calendar = %d, want 200\n%s", resp.StatusCode, file)
+	}
+	if ct := resp.Header.Get("Content-Type"); !strings.HasPrefix(ct, "text/calendar") {
+		t.Errorf("Content-Type = %q, want text/calendar", ct)
+	}
+	if origin := resp.Header.Get("Access-Control-Allow-Origin"); origin != "*" {
+		t.Errorf("Access-Control-Allow-Origin = %q — a front end on another domain cannot read this", origin)
+	}
+	// Without this the browser hides the filename from the page that
+	// asked for it, and every appointment saves under one invented name.
+	if exposed := resp.Header.Get("Access-Control-Expose-Headers"); exposed != "Content-Disposition" {
+		t.Errorf("Access-Control-Expose-Headers = %q, want Content-Disposition", exposed)
+	}
+	if !strings.Contains(string(file), "BEGIN:VEVENT") {
+		t.Errorf("the response is not a calendar:\n%s", file)
+	}
+	// The event points at the server-rendered confirmation page, which
+	// works with no build step and no scripting — the right thing for a
+	// link opened out of a calendar entry six weeks from now. The file is
+	// folded at 75 octets, so the link is looked for the way an importer
+	// reads it: unfolded.
+	unfolded := strings.ReplaceAll(string(file), "\r\n ", "")
+	if !strings.Contains(unfolded, "/book/"+bt.orgSlug+"/a/"+booked.ID) {
+		t.Errorf("the event does not link back to the customer's page:\n%s", file)
+	}
+}

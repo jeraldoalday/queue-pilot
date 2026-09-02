@@ -219,6 +219,11 @@ func (s *Server) apiRoutes(limitPublic func(http.Handler) http.Handler) http.Han
 	mux.HandleFunc("GET /api/v1/orgs/{orgSlug}/services/{serviceSlug}/slots", s.api.GetSlots)
 	mux.Handle("POST /api/v1/orgs/{orgSlug}/services/{serviceSlug}/bookings", limitPublic(http.HandlerFunc(s.api.PostBooking)))
 	mux.HandleFunc("GET /api/v1/orgs/{orgSlug}/appointments/{appointmentID}", s.api.GetAppointment)
+	// The same booking as a calendar file. It is under /api/v1 because a
+	// front end is what offers the button, and it answers text/calendar
+	// rather than JSON because the response is meant to be handed straight
+	// to the operating system.
+	mux.HandleFunc("GET /api/v1/orgs/{orgSlug}/appointments/{appointmentID}/calendar.ics", s.api.GetAppointmentCalendar)
 	mux.Handle("POST /api/v1/orgs/{orgSlug}/appointments/{appointmentID}/cancel", limitPublic(http.HandlerFunc(s.api.PostAppointmentCancel)))
 
 	mux.HandleFunc("GET /api/v1/orgs/{orgSlug}/queues/{queueSlug}", s.api.GetBoard)

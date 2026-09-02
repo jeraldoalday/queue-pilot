@@ -9,6 +9,8 @@ import (
 	"github.com/jeraldoalday/queuepilot/internal/appointment"
 	"github.com/jeraldoalday/queuepilot/internal/db"
 	"github.com/jeraldoalday/queuepilot/internal/db/sqlc"
+	"github.com/jeraldoalday/queuepilot/internal/platform/httpx"
+	"github.com/jeraldoalday/queuepilot/internal/platform/icalendar"
 )
 
 // SlotsResponse is one service's open times on one date, with the window
@@ -156,6 +158,48 @@ func (h *Handlers) GetAppointment(w http.ResponseWriter, r *http.Request) {
 	}
 
 	h.writeJSON(w, http.StatusOK, NewAppointment(row, oc.now, oc.loc))
+}
+
+// GetAppointmentCalendar serves the same booking as a file a calendar can
+// read, so a front end hosted anywhere can offer "add to calendar" without
+// building an iCalendar document of its own.
+//
+// It is the one endpoint here that does not answer JSON. That is on
+// purpose: the value of this route is that its response can be handed
+// straight to the operating system, and a front end that had to assemble
+// the file itself would be a second implementation of the escaping and
+// folding rules — which is exactly how the two ends of a product come to
+// disagree about what a customer's appointment says.
+//
+// A failure still answers with the JSON envelope. A caller that asked for
+// a calendar and got an error needs to know which error, and the closed
+// set of codes is the only vocabulary this API has for saying so.
+func (h *Handlers) GetAppointmentCalendar(w http.ResponseWriter, r *http.Request) {
+	oc, err := h.resolveOrg(r.Context(), r.PathValue("orgSlug"))
+	if err != nil {
+		h.fail(w, "GetAppointmentCalendar: org", err)
+		return
+	}
+
+	row, err := appointment.GetPublicAppointment(r.Context(), h.pool, oc.id(), r.PathValue("appointmentID"))
+	if err != nil {
+		h.fail(w, "GetAppointmentCalendar", err)
+		return
+	}
+
+	// The event links back to the server-rendered confirmation page rather
+	// than to whatever front end asked for the file. That page always
+	// exists, needs no build step and works with scripting off, which is
+	// what a link inside a calendar entry opened in six weeks needs to be.
+	page := httpx.AbsoluteURL(r, "/book/"+oc.row.Slug+"/a/"+db.UUIDString(row.ID))
+	cal := appointment.AppointmentCalendar(oc.row, row, page)
+
+	w.Header().Set("Content-Type", icalendar.ContentType)
+	w.Header().Set("Content-Disposition", `attachment; filename="`+appointment.CalendarFilename(oc.row, row, oc.loc)+`"`)
+	w.Header().Set("Cache-Control", "no-store")
+	if _, err := w.Write(cal.Bytes(oc.now)); err != nil {
+		h.log.Warn("api: GetAppointmentCalendar: write", "error", err)
+	}
 }
 
 // PostAppointmentCancel releases a booking on its holder's behalf.
