@@ -1,6 +1,9 @@
 package web
 
 import (
+	"bytes"
+	"context"
+	"strings"
 	"testing"
 	"time"
 
@@ -9,6 +12,7 @@ import (
 	"github.com/jeraldoalday/queuepilot/internal/db"
 	"github.com/jeraldoalday/queuepilot/internal/db/sqlc"
 	"github.com/jeraldoalday/queuepilot/internal/queue"
+	"github.com/jeraldoalday/queuepilot/internal/tenant"
 )
 
 // noon is the instant every dashboard test treats as "now", so "still to
@@ -205,4 +209,61 @@ func TestPlural(t *testing.T) {
 			t.Errorf("plural(%d) = %q", n, got)
 		}
 	}
+}
+
+// The dashboard prints the two addresses a business has to know: where
+// customers book, and where they walk in. Both are one line of a page
+// nobody reads twice, so the test is here rather than in a template.
+func TestDashboardSurfacesBothPublicAddresses(t *testing.T) {
+	d := Dashboard{
+		Role:    tenant.RoleAdmin,
+		OrgSlug: "acme-dental",
+		Lines: []QueueLine{
+			{Queue: sqlc.Queue{Name: "Walk-ins", Slug: "walk-ins"}},
+			{Queue: sqlc.Queue{Name: "Prescriptions", Slug: "prescriptions"}},
+		},
+		Bookable: 2,
+	}
+
+	page := renderDashboard(t, d)
+
+	for _, want := range []string{"/q/acme-dental", "/book/acme-dental", "2 lines open"} {
+		if !strings.Contains(page, want) {
+			t.Errorf("the dashboard does not show %q", want)
+		}
+	}
+}
+
+// An org with nothing open is told so, rather than being handed an
+// address that answers with an empty page.
+func TestDashboardSaysWhenThereIsNoWalkInAddressWorthSharing(t *testing.T) {
+	page := renderDashboard(t, Dashboard{Role: tenant.RoleAdmin, OrgSlug: "acme-dental"})
+
+	if !strings.Contains(page, "No walk-in lines are open") {
+		t.Errorf("an org with no open lines is not told so:\n%s", page)
+	}
+	if !strings.Contains(page, "/app/queues") {
+		t.Error("an admin is not offered the page that would fix it")
+	}
+}
+
+// A staff member sees the same floor and none of the configuration
+// shortcuts: a link to a page that would answer them with a 403 is worse
+// than no link.
+func TestDashboardDoesNotOfferStaffTheAdminFix(t *testing.T) {
+	page := renderDashboard(t, Dashboard{Role: tenant.RoleStaff, OrgSlug: "acme-dental"})
+
+	if strings.Contains(page, "/app/queues") {
+		t.Error("a staff member is offered the admin-only queue configuration")
+	}
+}
+
+func renderDashboard(t *testing.T, d Dashboard) string {
+	t.Helper()
+
+	var buf bytes.Buffer
+	if err := AppHome(d).Render(context.Background(), &buf); err != nil {
+		t.Fatalf("render: %v", err)
+	}
+	return buf.String()
 }

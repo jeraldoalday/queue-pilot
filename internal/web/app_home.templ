@@ -140,6 +140,7 @@ templ dashboardLinks(d Dashboard) {
 			<a href="/app/settings" class="font-medium text-slate-900 underline">Settings</a>
 		}
 	</p>
+	@dashboardWalkInLink(d)
 	@dashboardBookingLink(d)
 	<form method="POST" action="/logout" class="mt-8">
 		<input type="hidden" name="csrf_token" value={ d.CSRFToken }/>
@@ -147,6 +148,34 @@ templ dashboardLinks(d Dashboard) {
 			Log out, { d.Name }
 		</button>
 	</form>
+}
+
+// dashboardWalkInLink surfaces the address customers walk in through.
+//
+// It is the same argument the booking link makes: a page customers are
+// meant to reach is no use if the business never sees the address to put
+// on its own site, on a door, or into a QR code. This one is the list of
+// every open line, which is what belongs on a poster at the entrance —
+// the address of a single board belongs beside that counter, not at the
+// door where nobody has chosen a line yet.
+templ dashboardWalkInLink(d Dashboard) {
+	<div class="mt-4 rounded-lg border border-slate-200 bg-white px-4 py-3 text-sm">
+		if len(d.Lines) > 0 {
+			<p class="text-slate-600">
+				Walk-ins join at
+				<a href={ templ.SafeURL("/q/" + d.OrgSlug) } class="font-medium text-slate-900 underline">/q/{ d.OrgSlug }</a>
+				— { strconv.Itoa(len(d.Lines)) } { plural(len(d.Lines), "line", "lines") } open.
+			</p>
+		} else {
+			<p class="text-slate-600">
+				No walk-in lines are open, so /q/{ d.OrgSlug } has nothing to offer.
+				if d.Role == tenant.RoleAdmin {
+					<a href="/app/queues" class="underline">Open one</a>
+					and the address goes live.
+				}
+			</p>
+		}
+	</div>
 }
 
 // dashboardBookingLink surfaces the public booking URL, because a page

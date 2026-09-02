@@ -128,6 +128,7 @@ func seed(args []string) error {
   password   %s
 
   queue console  http://localhost:%s/app/queues
+  walk-in lines  http://localhost:%s/q/%s
   public board   http://localhost:%s/q/%s/%s
   display screen http://localhost:%s/q/%s/%s/display
   queue JSON     http://localhost:%s/api/q/%s/%s
@@ -144,6 +145,7 @@ func seed(args []string) error {
 		orgRow.Name,
 		cfg.Port, adminEmail, seedPassword,
 		cfg.Port,
+		cfg.Port, orgRow.Slug,
 		cfg.Port, orgRow.Slug, queueSlug,
 		cfg.Port, orgRow.Slug, queueSlug,
 		cfg.Port, orgRow.Slug, queueSlug,
