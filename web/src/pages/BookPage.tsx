@@ -95,7 +95,7 @@ export function BookPage() {
   // it cannot offer a day the booking endpoint would refuse. A customer
   // who tries three times and is turned down three times stops trying.
   const canGoBack = isBefore(firstBookableDay, chosenDay);
-  const canGoForward = isBefore(addDays(chosenDay, 1), lastBookableDay);
+  const canGoForward = isBefore(chosenDay, lastBookableDay);
 
   const changeDay = (delta: number) => {
     setDay(addDays(chosenDay, delta));

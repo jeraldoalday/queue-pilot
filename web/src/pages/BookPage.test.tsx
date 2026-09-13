@@ -1,4 +1,4 @@
-import { screen, waitFor } from "@testing-library/react";
+import { fireEvent, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { Route } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -136,6 +136,30 @@ describe("BookPage", () => {
 
     await screen.findByRole("button", { name: "10:00 am" });
     expect(screen.getByRole("button", { name: /previous day/i })).toBeDisabled();
+  });
+
+  // The window's own end is still a bookable day — it is where the current
+  // instant plus 60 days falls, not the day before it — so stepping onto
+  // it one day at a time must work the same as picking it in the date
+  // input, whose max already allows it.
+  it("allows stepping forward onto the very last bookable day, not just up to it", async () => {
+    renderBook();
+
+    await screen.findByRole("button", { name: "10:00 am" });
+    const input = screen.getByLabelText(/pick a date/i) as HTMLInputElement;
+
+    // One day short of the window's end (2026-06-01, per slotsResponse()).
+    fireEvent.change(input, { target: { value: "2026-05-31" } });
+    await waitFor(() =>
+      expect(slotsMock).toHaveBeenLastCalledWith(
+        "demo",
+        "consultation",
+        "2026-05-31",
+        expect.anything(),
+      ),
+    );
+
+    expect(screen.getByRole("button", { name: /next day/i })).not.toBeDisabled();
   });
 
   it("bounds the date input by the same window", async () => {
