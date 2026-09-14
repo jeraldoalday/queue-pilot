@@ -54,6 +54,7 @@ func (h *Handlers) GetReport(w http.ResponseWriter, r *http.Request) {
 		day.AddDate(0, 0, 1).Format(dateLayout),
 		today(loc).Format(dateLayout),
 		ident.Role == tenant.RoleAdmin,
+		hasNextReportDay(day, today(loc)),
 	))
 }
 

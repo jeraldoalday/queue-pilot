@@ -433,6 +433,32 @@ func TestParseDayIsMidnightInTheOrgTimezone(t *testing.T) {
 	}
 }
 
+// "Next day" stops at today: a service day that has not happened yet has
+// no tickets to report on, matching the "Jump to" date field's own max.
+func TestHasNextReportDay(t *testing.T) {
+	loc := reportLoc
+	todayInLoc := today(loc)
+
+	tests := []struct {
+		name string
+		day  time.Time
+		want bool
+	}{
+		{"a day before today has a next day", todayInLoc.AddDate(0, 0, -1), true},
+		{"a day well in the past has a next day", todayInLoc.AddDate(0, 0, -30), true},
+		{"today itself has no next day", todayInLoc, false},
+		{"a day already past today has no next day", todayInLoc.AddDate(0, 0, 1), false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := hasNextReportDay(tt.day, todayInLoc); got != tt.want {
+				t.Errorf("hasNextReportDay(%v, %v) = %v, want %v", tt.day, todayInLoc, got, tt.want)
+			}
+		})
+	}
+}
+
 func TestReportURL(t *testing.T) {
 	const queueID = "0d6f4c1e-2b3a-4d5e-8f90-112233445566"
 

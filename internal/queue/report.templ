@@ -31,7 +31,7 @@ func exportURL(queueID, date string) string {
 	return "/app/queues/" + queueID + "/export.csv?date=" + date
 }
 
-templ ReportPage(r Report, prevDate, nextDate, todayDate string, isAdmin bool) {
+templ ReportPage(r Report, prevDate, nextDate, todayDate string, isAdmin, hasNextDay bool) {
 	@components.Layout(r.Queue.Name + " · Report") {
 		<main class="mx-auto max-w-5xl px-6 py-10">
 			<p class="mb-4 space-x-4">
@@ -42,7 +42,7 @@ templ ReportPage(r Report, prevDate, nextDate, todayDate string, isAdmin bool) {
 			<h1 class="text-2xl font-semibold tracking-tight">{ r.Queue.Name }</h1>
 			<p class="mt-1 text-sm text-slate-600">{ r.Day.Format("Monday, 2 January 2006") }</p>
 
-			@reportDayNav(r, prevDate, nextDate, todayDate)
+			@reportDayNav(r, prevDate, nextDate, todayDate, hasNextDay)
 
 			if r.Empty() {
 				<p class="mt-8 rounded-md border border-slate-200 bg-white px-4 py-6 text-center text-sm text-slate-600">
@@ -76,7 +76,7 @@ templ ReportPage(r Report, prevDate, nextDate, todayDate string, isAdmin bool) {
 // reportDayNav is how someone actually reaches a report: yesterday, in one
 // click, from the day they are looking at. The date field is there for the
 // less common "the Tuesday we were short-staffed".
-templ reportDayNav(r Report, prevDate, nextDate, todayDate string) {
+templ reportDayNav(r Report, prevDate, nextDate, todayDate string, hasNextDay bool) {
 	<div class="mt-6 flex flex-wrap items-center gap-3 rounded-md border border-slate-200 bg-white px-4 py-3">
 		<a
 			href={ templ.SafeURL(reportURL(db.UUIDString(r.Queue.ID), prevDate)) }
@@ -84,12 +84,25 @@ templ reportDayNav(r Report, prevDate, nextDate, todayDate string) {
 		>
 			&larr; Previous day
 		</a>
-		<a
-			href={ templ.SafeURL(reportURL(db.UUIDString(r.Queue.ID), nextDate)) }
-			class="rounded-md border border-slate-300 px-3 py-1.5 text-sm text-slate-700 hover:bg-slate-50"
-		>
-			Next day &rarr;
-		</a>
+		if hasNextDay {
+			<a
+				href={ templ.SafeURL(reportURL(db.UUIDString(r.Queue.ID), nextDate)) }
+				class="rounded-md border border-slate-300 px-3 py-1.5 text-sm text-slate-700 hover:bg-slate-50"
+			>
+				Next day &rarr;
+			</a>
+		} else {
+			// Today is the newest service day there is to report on, so
+			// there is nothing a "next day" link could point at that
+			// wouldn't just be an empty page — the same reason the date
+			// field below refuses to offer it via its own max.
+			<span
+				aria-disabled="true"
+				class="cursor-not-allowed rounded-md border border-slate-200 px-3 py-1.5 text-sm text-slate-400"
+			>
+				Next day &rarr;
+			</span>
+		}
 		<a
 			href={ templ.SafeURL(reportURL(db.UUIDString(r.Queue.ID), "")) }
 			class="text-sm text-slate-600 underline"
