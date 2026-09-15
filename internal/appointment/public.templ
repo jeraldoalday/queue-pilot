@@ -61,7 +61,7 @@ templ PublicServicesPage(o sqlc.Organization, services []sqlc.Service) {
 	}
 }
 
-templ PublicBookPage(o sqlc.Organization, svc sqlc.Service, day time.Time, slots []OpenSlot, loc *time.Location, errMsg string) {
+templ PublicBookPage(o sqlc.Organization, svc sqlc.Service, day time.Time, slots []OpenSlot, loc *time.Location, errMsg string, minDate, maxDate string, hasPrevDay, hasNextDay bool) {
 	@components.Layout(svc.Name + " · " + o.Name) {
 		<main class="mx-auto max-w-xl px-6 py-12">
 			<p class="mb-4">
@@ -73,7 +73,7 @@ templ PublicBookPage(o sqlc.Organization, svc sqlc.Service, day time.Time, slots
 			if errMsg != "" {
 				<p class="mt-4 rounded-md bg-red-50 px-3 py-2 text-sm text-red-700">{ errMsg }</p>
 			}
-			@publicDayPicker(o, svc, day)
+			@publicDayPicker(o, svc, day, minDate, maxDate, hasPrevDay, hasNextDay)
 			<h2 class="mt-8 text-base font-medium">{ formatDayHeading(day) }</h2>
 			if len(slots) == 0 {
 				<p class="mt-3 rounded-md bg-slate-100 px-4 py-3 text-sm text-slate-700">
@@ -88,18 +88,44 @@ templ PublicBookPage(o sqlc.Organization, svc sqlc.Service, day time.Time, slots
 
 // publicDayPicker is a plain GET form: choosing a day is navigation, so it
 // belongs in the URL where it can be bookmarked, shared and gone back to.
-templ publicDayPicker(o sqlc.Organization, svc sqlc.Service, day time.Time) {
+//
+// The date field's own min/max and the Previous/Next links all follow the
+// same booking window, so none of the three can offer a day the other two
+// would refuse — a customer stepping past the window's far edge one day at
+// a time would otherwise land back on the same day with no explanation.
+templ publicDayPicker(o sqlc.Organization, svc sqlc.Service, day time.Time, minDate, maxDate string, hasPrevDay, hasNextDay bool) {
 	<form method="GET" action={ templ.SafeURL(bookURL(o.Slug, svc.Slug)) } class="mt-6 flex items-end gap-3">
+		if hasPrevDay {
+			<a href={ templ.SafeURL(bookURL(o.Slug, svc.Slug) + "?date=" + day.AddDate(0, 0, -1).Format(dateFormat)) } class="pb-2 text-sm text-slate-600 underline">
+				Previous day
+			</a>
+		} else {
+			// Today is the near edge of the window even when every slot on
+			// it has passed, so a page already showing today has nowhere
+			// earlier for this link to go.
+			<span aria-disabled="true" class="pb-2 text-sm text-slate-400 cursor-not-allowed">
+				Previous day
+			</span>
+		}
 		<div>
 			<label for="date" class="block text-xs font-medium text-slate-700">Date</label>
-			<input id="date" name="date" type="date" value={ day.Format(dateFormat) } class="mt-1 rounded-md border border-slate-300 px-2 py-1.5 text-sm"/>
+			<input id="date" name="date" type="date" value={ day.Format(dateFormat) } min={ minDate } max={ maxDate } class="mt-1 rounded-md border border-slate-300 px-2 py-1.5 text-sm"/>
 		</div>
 		<button type="submit" class="rounded-md border border-slate-300 px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-100">
 			Show times
 		</button>
-		<a href={ templ.SafeURL(bookURL(o.Slug, svc.Slug) + "?date=" + day.AddDate(0, 0, 1).Format(dateFormat)) } class="pb-2 text-sm text-slate-600 underline">
-			Next day
-		</a>
+		if hasNextDay {
+			<a href={ templ.SafeURL(bookURL(o.Slug, svc.Slug) + "?date=" + day.AddDate(0, 0, 1).Format(dateFormat)) } class="pb-2 text-sm text-slate-600 underline">
+				Next day
+			</a>
+		} else {
+			// The window's far edge is itself still bookable, so once the
+			// page is showing it there is no next day worth linking to —
+			// only a run of days the endpoint would refuse.
+			<span aria-disabled="true" class="pb-2 text-sm text-slate-400 cursor-not-allowed">
+				Next day
+			</span>
+		}
 	</form>
 }
 

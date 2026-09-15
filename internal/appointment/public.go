@@ -200,6 +200,27 @@ func CheckBookingWindow(start, now time.Time) error {
 	return nil
 }
 
+// hasPreviousBookableDay reports whether the picker's "Previous day" link
+// should be offered from a page currently showing `day`.
+//
+// Today is the near edge of the window even when every slot on it has
+// passed — bookableDay clamps anything earlier back to it — so a day
+// already at today has nowhere earlier for the link to go.
+func hasPreviousBookableDay(day, today time.Time) bool {
+	return day.After(today)
+}
+
+// hasNextBookableDay reports whether the picker's "Next day" link should
+// be offered.
+//
+// The window's far edge is itself still bookable — it's where now plus
+// MaxBookAhead falls, not the day before it — so the link stays live up to
+// and including that day, matching canGoForward's own rule in the React
+// front end's BookPage.
+func hasNextBookableDay(day, last time.Time) bool {
+	return day.Before(last)
+}
+
 // PublicSlots returns the times a customer may book for one service on one
 // date, with the staff member who would take each.
 //

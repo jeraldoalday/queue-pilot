@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/a-h/templ"
 	"github.com/jackc/pgx/v5"
 
 	"github.com/jeraldoalday/queuepilot/internal/db"
@@ -76,7 +77,7 @@ func (h *Handlers) GetPublicBook(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	render(w, r, PublicBookPage(pc.orgRow, svc, day, slots, pc.loc, ""))
+	render(w, r, h.bookPage(pc, svc, day, slots, ""))
 }
 
 // PostPublicBook takes the booking and sends the customer to their
@@ -270,7 +271,26 @@ func (h *Handlers) rerenderBooking(w http.ResponseWriter, r *http.Request, pc pu
 		return
 	}
 	w.WriteHeader(http.StatusUnprocessableEntity)
-	render(w, r, PublicBookPage(pc.orgRow, svc, day, slots, pc.loc, msg))
+	render(w, r, h.bookPage(pc, svc, day, slots, msg))
+}
+
+// bookPage assembles the booking picker for one day, including the bounds
+// the date field and the Previous/Next links are drawn against. Both call
+// sites above need the same window applied to the same day, and building
+// it in one place is what keeps the picker's min/max and its links unable
+// to disagree with each other about where the window ends.
+func (h *Handlers) bookPage(pc publicContext, svc sqlc.Service, day time.Time, slots []OpenSlot, errMsg string) templ.Component {
+	today, last := pc.bookableWindow()
+	return PublicBookPage(pc.orgRow, svc, day, slots, pc.loc, errMsg,
+		today.Format(dateFormat), last.Format(dateFormat),
+		hasPreviousBookableDay(day, today), hasNextBookableDay(day, last))
+}
+
+// bookableWindow returns the earliest and latest day the picker may show,
+// in the org's own timezone. bookableDay clamps into this same range, so
+// the picker cannot offer a day the booking endpoint would then refuse.
+func (pc publicContext) bookableWindow() (today, last time.Time) {
+	return startOfDay(pc.now), startOfDay(pc.now.Add(MaxBookAhead))
 }
 
 // bookableDay reads the requested date and clamps it into the window the
@@ -284,8 +304,7 @@ func (h *Handlers) rerenderBooking(w http.ResponseWriter, r *http.Request, pc pu
 // list and step forward from it, not be moved to tomorrow without being
 // told why.
 func (pc publicContext) bookableDay(value string) time.Time {
-	today := startOfDay(pc.now)
-	last := startOfDay(pc.now.Add(MaxBookAhead))
+	today, last := pc.bookableWindow()
 
 	day := parseDay(value, pc.loc)
 	if day.Before(today) {

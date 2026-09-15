@@ -188,6 +188,57 @@ func TestFindSlotRejectsATimeNobodyOffered(t *testing.T) {
 	}
 }
 
+// "Previous day" stops at today: bookableDay clamps anything earlier back
+// to it, so a page already on today has nowhere earlier to send the link.
+func TestHasPreviousBookableDay(t *testing.T) {
+	today := day
+
+	tests := []struct {
+		name string
+		on   time.Time
+		want bool
+	}{
+		{"a day after today has a previous day", today.AddDate(0, 0, 1), true},
+		{"a day well ahead has a previous day", today.AddDate(0, 0, 30), true},
+		{"today itself has no previous day", today, false},
+		{"a day already before today has no previous day", today.AddDate(0, 0, -1), false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := hasPreviousBookableDay(tt.on, today); got != tt.want {
+				t.Errorf("hasPreviousBookableDay(%v, %v) = %v, want %v", tt.on, today, got, tt.want)
+			}
+		})
+	}
+}
+
+// "Next day" stops at the window's far edge, which is itself still
+// bookable — it's where now plus MaxBookAhead falls, not the day before
+// it — matching canGoForward's own rule in the React front end's BookPage.
+func TestHasNextBookableDay(t *testing.T) {
+	last := day.AddDate(0, 0, 60)
+
+	tests := []struct {
+		name string
+		on   time.Time
+		want bool
+	}{
+		{"a day before the far edge has a next day", last.AddDate(0, 0, -1), true},
+		{"a day well before the far edge has a next day", last.AddDate(0, 0, -30), true},
+		{"the far edge itself has no next day", last, false},
+		{"a day already past the far edge has no next day", last.AddDate(0, 0, 1), false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := hasNextBookableDay(tt.on, last); got != tt.want {
+				t.Errorf("hasNextBookableDay(%v, %v) = %v, want %v", tt.on, last, got, tt.want)
+			}
+		})
+	}
+}
+
 func TestLooksLikeEmail(t *testing.T) {
 	valid := []string{"a@b.co", "someone@example.test", " padded@example.test "}
 	for _, s := range valid {
