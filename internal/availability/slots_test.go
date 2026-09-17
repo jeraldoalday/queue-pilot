@@ -165,3 +165,62 @@ func TestGenerateSlots_DefaultsGranularityToDuration(t *testing.T) {
 		t.Fatalf("got %d slots, want %d: %+v", len(slots), len(want), slots)
 	}
 }
+
+// TestGenerateSlots_SpringForwardKeepsWallClockHours guards against
+// computing a window as "midnight plus N minutes elapsed" instead of as a
+// wall-clock time: on the day a location's clocks spring forward, those two
+// are an hour apart. A staff member whose hours read 9:00-17:00 must still
+// see slots starting at 9:00 wall-clock time on that day, not 10:00.
+func TestGenerateSlots_SpringForwardKeepsWallClockHours(t *testing.T) {
+	loc, err := time.LoadLocation("America/New_York")
+	if err != nil {
+		t.Skipf("tzdata unavailable: %v", err)
+	}
+	// 2026-03-08 is the US spring-forward day: 02:00 EST becomes 03:00 EDT.
+	springForward := time.Date(2026, 3, 8, 0, 0, 0, 0, loc)
+	if springForward.Weekday() != time.Sunday {
+		t.Fatalf("test fixture drifted: %v is not a Sunday", springForward)
+	}
+	hours := []WeeklyHours{{Weekday: time.Sunday, StartMin: 9 * 60, EndMin: 17 * 60}}
+
+	slots := GenerateSlots(hours, nil, springForward, time.Hour, time.Hour)
+
+	if len(slots) == 0 {
+		t.Fatal("got no slots on the spring-forward day")
+	}
+	wantStart := at(springForward, 9, 0)
+	if !slots[0].Start.Equal(wantStart) {
+		t.Errorf("first slot starts at %v, want 09:00 local (%v)", slots[0].Start, wantStart)
+	}
+	wantEnd := at(springForward, 17, 0)
+	last := slots[len(slots)-1]
+	if !last.End.Equal(wantEnd) {
+		t.Errorf("last slot ends at %v, want 17:00 local (%v)", last.End, wantEnd)
+	}
+}
+
+// TestGenerateSlots_FallBackKeepsWallClockHours is the same guard for the
+// other DST transition, where the naive "midnight plus N minutes" math
+// lands an hour early instead of late.
+func TestGenerateSlots_FallBackKeepsWallClockHours(t *testing.T) {
+	loc, err := time.LoadLocation("America/New_York")
+	if err != nil {
+		t.Skipf("tzdata unavailable: %v", err)
+	}
+	// 2026-11-01 is the US fall-back day: 02:00 EDT becomes 01:00 EST.
+	fallBack := time.Date(2026, 11, 1, 0, 0, 0, 0, loc)
+	if fallBack.Weekday() != time.Sunday {
+		t.Fatalf("test fixture drifted: %v is not a Sunday", fallBack)
+	}
+	hours := []WeeklyHours{{Weekday: time.Sunday, StartMin: 9 * 60, EndMin: 17 * 60}}
+
+	slots := GenerateSlots(hours, nil, fallBack, time.Hour, time.Hour)
+
+	if len(slots) == 0 {
+		t.Fatal("got no slots on the fall-back day")
+	}
+	wantStart := at(fallBack, 9, 0)
+	if !slots[0].Start.Equal(wantStart) {
+		t.Errorf("first slot starts at %v, want 09:00 local (%v)", slots[0].Start, wantStart)
+	}
+}

@@ -41,16 +41,21 @@ func GenerateSlots(hours []WeeklyHours, existing []Booking, date time.Time, dura
 		granularity = duration
 	}
 
-	dayStart := time.Date(date.Year(), date.Month(), date.Day(), 0, 0, 0, 0, date.Location())
-
 	var slots []Slot
 	for _, w := range hours {
 		if w.Weekday != date.Weekday() {
 			continue
 		}
 
-		winStart := dayStart.Add(time.Duration(w.StartMin) * time.Minute)
-		winEnd := dayStart.Add(time.Duration(w.EndMin) * time.Minute)
+		// Built directly from the wall-clock minute-of-day rather than as
+		// midnight plus an elapsed duration: on a day the location springs
+		// forward or falls back, adding StartMin/EndMin minutes to midnight
+		// counts real elapsed time, not clock time, and lands an hour off
+		// from the working hours staff actually set. time.Date interprets
+		// StartMin/EndMin (which may run past 59) as wall-clock minutes and
+		// normalizes them within the correct offset for that day.
+		winStart := time.Date(date.Year(), date.Month(), date.Day(), 0, w.StartMin, 0, 0, date.Location())
+		winEnd := time.Date(date.Year(), date.Month(), date.Day(), 0, w.EndMin, 0, 0, date.Location())
 
 		for start := winStart; !start.Add(duration).After(winEnd); start = start.Add(granularity) {
 			end := start.Add(duration)
