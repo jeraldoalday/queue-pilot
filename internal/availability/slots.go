@@ -79,3 +79,29 @@ func overlapsAny(start, end time.Time, existing []Booking) bool {
 	}
 	return false
 }
+
+// OverlapsWeeklyHours reports whether [startMin, endMin) on weekday overlaps
+// any window already in hours for that same weekday.
+//
+// A split shift — separate morning and afternoon windows on one weekday —
+// is a real schedule (TestGenerateSlots_MultipleWindowsSameDay covers it),
+// so this only rejects windows that genuinely overlap, not merely coexist.
+// Two windows that touch at a boundary (one ending exactly when the other
+// starts) do not overlap, matching overlapsAny's own half-open comparison.
+//
+// It exists because GenerateSlots has no notion of "the same slot twice":
+// it walks every window independently, so two overlapping recurring windows
+// for one staff member produce the same start time once per window that
+// covers it — which the admin's manual booking form then renders as
+// identical, unlabelled duplicate time buttons.
+func OverlapsWeeklyHours(hours []WeeklyHours, weekday time.Weekday, startMin, endMin int) bool {
+	for _, h := range hours {
+		if h.Weekday != weekday {
+			continue
+		}
+		if startMin < h.EndMin && h.StartMin < endMin {
+			return true
+		}
+	}
+	return false
+}

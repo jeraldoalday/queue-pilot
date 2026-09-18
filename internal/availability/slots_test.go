@@ -166,6 +166,50 @@ func TestGenerateSlots_DefaultsGranularityToDuration(t *testing.T) {
 	}
 }
 
+func TestOverlapsWeeklyHours_DifferentWeekdayNeverOverlaps(t *testing.T) {
+	hours := []WeeklyHours{{Weekday: time.Tuesday, StartMin: 9 * 60, EndMin: 17 * 60}}
+
+	if OverlapsWeeklyHours(hours, time.Monday, 9*60, 17*60) {
+		t.Fatal("windows on different weekdays must never overlap")
+	}
+}
+
+func TestOverlapsWeeklyHours_SplitShiftDoesNotOverlap(t *testing.T) {
+	// The exact schedule TestGenerateSlots_MultipleWindowsSameDay covers: a
+	// morning window and a separate afternoon one on the same day.
+	hours := []WeeklyHours{{Weekday: time.Monday, StartMin: 9 * 60, EndMin: 11 * 60}}
+
+	if OverlapsWeeklyHours(hours, time.Monday, 13*60, 14*60) {
+		t.Fatal("a non-overlapping second window on the same weekday must be allowed")
+	}
+}
+
+func TestOverlapsWeeklyHours_TouchingBoundaryIsNotOverlap(t *testing.T) {
+	// One window ending exactly when the next starts is a back-to-back
+	// schedule, not an overlap — matching overlapsAny's own half-open rule.
+	hours := []WeeklyHours{{Weekday: time.Monday, StartMin: 9 * 60, EndMin: 12 * 60}}
+
+	if OverlapsWeeklyHours(hours, time.Monday, 12*60, 15*60) {
+		t.Fatal("a window starting exactly when another ends must not count as overlapping")
+	}
+}
+
+func TestOverlapsWeeklyHours_PartialOverlapIsDetected(t *testing.T) {
+	hours := []WeeklyHours{{Weekday: time.Monday, StartMin: 9 * 60, EndMin: 12 * 60}}
+
+	if !OverlapsWeeklyHours(hours, time.Monday, 11*60, 14*60) {
+		t.Fatal("a window starting before another ends must be detected as overlapping")
+	}
+}
+
+func TestOverlapsWeeklyHours_ContainedWindowIsDetected(t *testing.T) {
+	hours := []WeeklyHours{{Weekday: time.Monday, StartMin: 9 * 60, EndMin: 17 * 60}}
+
+	if !OverlapsWeeklyHours(hours, time.Monday, 12*60, 13*60) {
+		t.Fatal("a window entirely inside another must be detected as overlapping")
+	}
+}
+
 // TestGenerateSlots_SpringForwardKeepsWallClockHours guards against
 // computing a window as "midnight plus N minutes elapsed" instead of as a
 // wall-clock time: on the day a location's clocks spring forward, those two

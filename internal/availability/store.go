@@ -38,9 +38,25 @@ func (in HoursInput) validate() error {
 
 // AddHours records one recurring weekly window for staffUserID. orgID must
 // come from the caller's authenticated tenant context.
+//
+// It refuses a window that overlaps one already set for the same weekday.
+// Nothing about slot generation assumes two windows can cover the same
+// minute — GenerateSlots walks each window independently — so an overlap
+// silently offers the same time slot once per window that covers it, which
+// the admin's manual booking form then renders as duplicate, unlabelled
+// buttons for what is really one time. A split shift (separate morning and
+// afternoon windows) is unaffected: those don't overlap.
 func AddHours(ctx context.Context, pool *pgxpool.Pool, orgID, staffUserID string, in HoursInput) (sqlc.StaffAvailability, error) {
 	if err := in.validate(); err != nil {
 		return sqlc.StaffAvailability{}, err
+	}
+
+	existing, err := ListHours(ctx, pool, orgID, staffUserID)
+	if err != nil {
+		return sqlc.StaffAvailability{}, err
+	}
+	if OverlapsWeeklyHours(ToWeeklyHours(existing), time.Weekday(in.Weekday), in.StartMin, in.EndMin) {
+		return sqlc.StaffAvailability{}, ValidationError{"this overlaps a window already set for that day"}
 	}
 
 	return sqlc.New(pool).CreateAvailability(ctx, sqlc.CreateAvailabilityParams{
