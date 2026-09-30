@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/jackc/pgx/v5/pgtype"
@@ -65,8 +66,8 @@ func WriteCSV(w io.Writer, tickets []sqlc.QueueTicket, loc *time.Location) error
 		row := []string{
 			strconv.Itoa(int(t.Number)),
 			t.Status,
-			t.CustomerName,
-			db.TextString(t.CustomerPhone),
+			csvFormulaSafe(t.CustomerName),
+			csvFormulaSafe(db.TextString(t.CustomerPhone)),
 			exportTime(t.CreatedAt, loc),
 			exportTime(t.CalledAt, loc),
 			exportTime(t.ServingAt, loc),
@@ -81,6 +82,42 @@ func WriteCSV(w io.Writer, tickets []sqlc.QueueTicket, loc *time.Location) error
 
 	cw.Flush()
 	return cw.Error()
+}
+
+// csvFormulaLeadChars are the characters that, at the start of a cell,
+// common spreadsheet software (Excel, Google Sheets, LibreOffice Calc)
+// reads as the opening of a formula rather than as literal text — this is
+// true whether or not encoding/csv had to quote the cell for a comma or a
+// newline, since a formula is recognised from the cell's content, not from
+// how the file around it is escaped.
+//
+// customer_name and customer_phone are typed by whoever joined the line or
+// booked online, with nothing here checking their shape beyond a length
+// bound (see maxCustomerNameLen, maxPhoneLen), so a name of "=HYPERLINK(...)"
+// or "=cmd|' /C calc'!A0" reaches this file exactly as typed. The row looks
+// unremarkable in the download; the payload runs the moment an admin opens
+// it in a spreadsheet to do payroll.
+const csvFormulaLeadChars = "=+-@\t\r"
+
+// csvFormulaSafe neutralizes a cell that would otherwise open as a formula,
+// by prefixing it with a single quote — the same character a person types
+// into Excel to say "treat this literally", and the standard mitigation
+// for CSV injection (OWASP calls it out by name). Every spreadsheet that
+// would have evaluated the cell instead treats the quote as its own
+// force-text marker and renders the value beneath it, unchanged, to
+// whoever opens the file.
+//
+// This does mean a phone number typed as "+44 7700 900000" carries a
+// leading quote in the raw file too — the phone field is exactly as
+// untrusted as the name field, and there is no way to tell "a customer's
+// own number" from "an attempt to open a spreadsheet's formula parser"
+// from the string alone. A spreadsheet hides the quote; a plain-text
+// viewer of the CSV shows it, which is judged the better failure to have.
+func csvFormulaSafe(s string) string {
+	if s != "" && strings.ContainsRune(csvFormulaLeadChars, rune(s[0])) {
+		return "'" + s
+	}
+	return s
 }
 
 // exportTime renders an optional instant, leaving the cell empty when the

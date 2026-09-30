@@ -41,7 +41,10 @@ func exportToString(t *testing.T, tickets []sqlc.QueueTicket, loc *time.Location
 }
 
 func TestWriteCSVHeaderAndRowShape(t *testing.T) {
-	ticket := namedTicket(1, StatusDone, "Ada Lovelace", "+44 7700 900000")
+	// The phone number deliberately does not start with a formula-injection
+	// character (see TestWriteCSVNeutralizesFormulaInjection for that case)
+	// so this test only exercises the row's ordinary shape.
+	ticket := namedTicket(1, StatusDone, "Ada Lovelace", "020 7700 900000")
 	ticket.CreatedAt = hhmm(9, 0)
 	ticket.CalledAt = hhmm(9, 10)
 	ticket.ServingAt = hhmm(9, 11)
@@ -62,7 +65,7 @@ func TestWriteCSVHeaderAndRowShape(t *testing.T) {
 	}
 
 	got := rows[1]
-	if got[0] != "1" || got[1] != "done" || got[2] != "Ada Lovelace" || got[3] != "+44 7700 900000" {
+	if got[0] != "1" || got[1] != "done" || got[2] != "Ada Lovelace" || got[3] != "020 7700 900000" {
 		t.Errorf("row identity cells = %v, want number 1, done, Ada Lovelace, her phone", got[:4])
 	}
 	// 9:00 -> 9:10 is a 600-second wait; 9:11 -> 9:21 a 600-second service.
@@ -122,16 +125,22 @@ func TestWriteCSVWritesOrgLocalTimesWithOffset(t *testing.T) {
 // the test is here so that a hand-rolled writer can never quietly replace
 // it.
 func TestWriteCSVQuotesAwkwardNames(t *testing.T) {
-	awkward := []string{
-		`Smith, John`,
-		`He said "hello"`,
-		"Two\nLines",
-		`=1+1`,
+	awkward := []struct {
+		name string
+		want string
+	}{
+		{`Smith, John`, `Smith, John`},
+		{`He said "hello"`, `He said "hello"`},
+		{"Two\nLines", "Two\nLines"},
+		// A formula-injection payload is neutralized (see
+		// TestWriteCSVNeutralizesFormulaInjection), not merely
+		// structure-preserved, so the stored value differs from the input.
+		{`=1+1`, `'=1+1`},
 	}
 
 	tickets := make([]sqlc.QueueTicket, 0, len(awkward))
-	for i, name := range awkward {
-		ticket := namedTicket(int32(i+1), StatusWaiting, name, "")
+	for i, c := range awkward {
+		ticket := namedTicket(int32(i+1), StatusWaiting, c.name, "")
 		ticket.CreatedAt = hhmm(9, 0)
 		tickets = append(tickets, ticket)
 	}
@@ -140,12 +149,72 @@ func TestWriteCSVQuotesAwkwardNames(t *testing.T) {
 	if len(rows) != len(awkward)+1 {
 		t.Fatalf("got %d rows, want %d — a value broke the row structure", len(rows), len(awkward)+1)
 	}
-	for i, name := range awkward {
-		if got := rows[i+1][2]; got != name {
-			t.Errorf("row %d name = %q, want %q", i+1, got, name)
+	for i, c := range awkward {
+		if got := rows[i+1][2]; got != c.want {
+			t.Errorf("row %d name = %q, want %q", i+1, got, c.want)
 		}
 		if len(rows[i+1]) != len(exportColumns) {
 			t.Errorf("row %d has %d cells, want %d", i+1, len(rows[i+1]), len(exportColumns))
+		}
+	}
+}
+
+// A customer name or phone number opening with =, +, -, @, a tab or a
+// carriage return is what Excel, Google Sheets and LibreOffice Calc all
+// read as the start of a formula, not as literal text — regardless of the
+// CSV quoting around it, since that is a property of the cell's own
+// content. Both fields are typed by whoever joined the line, unchecked
+// beyond a length bound, so an admin opening the day's download in a
+// spreadsheet must not be able to have someone else's name run as code
+// against their machine.
+func TestWriteCSVNeutralizesFormulaInjection(t *testing.T) {
+	cases := []struct {
+		name, phone string
+	}{
+		{name: `=cmd|' /C calc'!A0`},
+		{name: `+HYPERLINK("http://evil.example","click")`},
+		{name: `-2+3`},
+		{name: `@SUM(1+1)`},
+		{phone: "=1+1"},
+	}
+
+	for _, c := range cases {
+		ticket := namedTicket(1, StatusWaiting, c.name, c.phone)
+		ticket.CreatedAt = hhmm(9, 0)
+
+		rows := parseCSV(t, exportToString(t, []sqlc.QueueTicket{ticket}, reportLoc))
+		got := rows[1]
+
+		if c.name != "" {
+			if want := "'" + c.name; got[2] != want {
+				t.Errorf("customer_name for %q = %q, want %q", c.name, got[2], want)
+			}
+		}
+		if c.phone != "" {
+			if want := "'" + c.phone; got[3] != want {
+				t.Errorf("customer_phone for %q = %q, want %q", c.phone, got[3], want)
+			}
+		}
+	}
+}
+
+// A name that merely contains one of those characters, rather than
+// starting with one, is exactly as safe as any other name: no spreadsheet
+// reads the middle of a cell as a formula, so nothing here should touch it.
+func TestWriteCSVLeavesOrdinaryNamesAlone(t *testing.T) {
+	ordinary := []string{"Mary-Jane", "user@example.com", "Ada Lovelace"}
+
+	tickets := make([]sqlc.QueueTicket, 0, len(ordinary))
+	for i, name := range ordinary {
+		ticket := namedTicket(int32(i+1), StatusWaiting, name, "")
+		ticket.CreatedAt = hhmm(9, 0)
+		tickets = append(tickets, ticket)
+	}
+
+	rows := parseCSV(t, exportToString(t, tickets, reportLoc))
+	for i, name := range ordinary {
+		if got := rows[i+1][2]; got != name {
+			t.Errorf("row %d name = %q, want %q unchanged", i+1, got, name)
 		}
 	}
 }
