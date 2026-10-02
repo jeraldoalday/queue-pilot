@@ -46,6 +46,15 @@ func (in HoursInput) validate() error {
 // the admin's manual booking form then renders as duplicate, unlabelled
 // buttons for what is really one time. A split shift (separate morning and
 // afternoon windows) is unaffected: those don't overlap.
+//
+// The check above is not sufficient under concurrency on its own — two
+// requests adding hours for the same staff member at once can both read
+// the existing windows and both see no overlap before either inserts —
+// which is exactly the race appointment.Book closes with a DB-level
+// EXCLUDE constraint rather than trusting its own overlap count. The
+// staff_availability_no_overlap constraint is the same backstop for this
+// table; a losing insert surfaces here as db.IsExclusionViolation and is
+// turned into the same friendly message the check above gives.
 func AddHours(ctx context.Context, pool *pgxpool.Pool, orgID, staffUserID string, in HoursInput) (sqlc.StaffAvailability, error) {
 	if err := in.validate(); err != nil {
 		return sqlc.StaffAvailability{}, err
@@ -59,7 +68,7 @@ func AddHours(ctx context.Context, pool *pgxpool.Pool, orgID, staffUserID string
 		return sqlc.StaffAvailability{}, ValidationError{"this overlaps a window already set for that day"}
 	}
 
-	return sqlc.New(pool).CreateAvailability(ctx, sqlc.CreateAvailabilityParams{
+	row, err := sqlc.New(pool).CreateAvailability(ctx, sqlc.CreateAvailabilityParams{
 		ID:          db.MustUUID(id.New()),
 		OrgID:       db.MustUUID(orgID),
 		StaffUserID: db.MustUUID(staffUserID),
@@ -67,6 +76,16 @@ func AddHours(ctx context.Context, pool *pgxpool.Pool, orgID, staffUserID string
 		StartTime:   db.TimeOfDayFromMinutes(in.StartMin),
 		EndTime:     db.TimeOfDayFromMinutes(in.EndMin),
 	})
+	if err != nil {
+		// Another request won the race between the check above and this
+		// insert; the constraint is the actual guarantee, this check is
+		// only what turns its violation into a message a form can show.
+		if db.IsExclusionViolation(err) {
+			return sqlc.StaffAvailability{}, ValidationError{"this overlaps a window already set for that day"}
+		}
+		return sqlc.StaffAvailability{}, err
+	}
+	return row, nil
 }
 
 func ListHours(ctx context.Context, pool *pgxpool.Pool, orgID, staffUserID string) ([]sqlc.StaffAvailability, error) {
