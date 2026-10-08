@@ -2,6 +2,7 @@ package catalog
 
 import (
 	"math"
+	"strings"
 	"testing"
 )
 
@@ -25,6 +26,10 @@ func TestServiceInputValidate(t *testing.T) {
 			in.DurationMinutes = math.MaxInt32 + 1
 			return in
 		}},
+		{"name too long", func(in ServiceInput) ServiceInput {
+			in.Name = strings.Repeat("a", maxServiceNameLen+1)
+			return in
+		}},
 	}
 
 	for _, tt := range tests {
@@ -44,5 +49,12 @@ func TestServiceInputValidateAllowsTheLargestDurationTheColumnHolds(t *testing.T
 	in := ServiceInput{Name: "Retreat", DurationMinutes: math.MaxInt32}
 	if err := in.validate(); err != nil {
 		t.Fatalf("duration at the int32 boundary was rejected: %v", err)
+	}
+}
+
+func TestServiceInputValidateAllowsANameAtTheLengthLimit(t *testing.T) {
+	in := ServiceInput{Name: strings.Repeat("a", maxServiceNameLen), DurationMinutes: 30}
+	if err := in.validate(); err != nil {
+		t.Fatalf("name at the length limit was rejected: %v", err)
 	}
 }

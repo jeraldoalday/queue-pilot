@@ -31,6 +31,11 @@ type ValidationError struct{ msg string }
 
 func (e ValidationError) Error() string { return e.msg }
 
+// maxServiceNameLen bounds a service name the same way queue.maxNameLen
+// bounds a queue name: so a pasted essay can't break the services table's
+// layout or the edit form it expands into. Deliberately generous.
+const maxServiceNameLen = 80
+
 type ServiceInput struct {
 	Name            string
 	Description     string
@@ -39,8 +44,12 @@ type ServiceInput struct {
 }
 
 func (in ServiceInput) validate() error {
-	if strings.TrimSpace(in.Name) == "" {
+	name := strings.TrimSpace(in.Name)
+	if name == "" {
 		return ValidationError{"service name is required"}
+	}
+	if len(name) > maxServiceNameLen {
+		return ValidationError{fmt.Sprintf("service name must be %d characters or fewer", maxServiceNameLen)}
 	}
 	if in.DurationMinutes <= 0 {
 		return ValidationError{"duration must be greater than 0 minutes"}
@@ -67,8 +76,9 @@ func CreateService(ctx context.Context, pool *pgxpool.Pool, orgID string, in Ser
 		return sqlc.Service{}, err
 	}
 
+	name := strings.TrimSpace(in.Name)
 	q := sqlc.New(pool)
-	svcSlug, err := uniqueServiceSlug(ctx, q, orgID, slug.SlugifyOr(in.Name, "service"))
+	svcSlug, err := uniqueServiceSlug(ctx, q, orgID, slug.SlugifyOr(name, "service"))
 	if err != nil {
 		return sqlc.Service{}, err
 	}
@@ -77,7 +87,7 @@ func CreateService(ctx context.Context, pool *pgxpool.Pool, orgID string, in Ser
 		ID:              db.MustUUID(id.New()),
 		OrgID:           db.MustUUID(orgID),
 		Slug:            svcSlug,
-		Name:            in.Name,
+		Name:            name,
 		Description:     in.Description,
 		DurationMinutes: int32(in.DurationMinutes),
 		PriceCents:      db.Int4(nil), // billing is out of scope for the MVP
@@ -113,7 +123,7 @@ func UpdateService(ctx context.Context, pool *pgxpool.Pool, orgID, serviceID str
 	return sqlc.New(pool).UpdateService(ctx, sqlc.UpdateServiceParams{
 		ID:              db.MustUUID(serviceID),
 		OrgID:           db.MustUUID(orgID),
-		Name:            in.Name,
+		Name:            strings.TrimSpace(in.Name),
 		Description:     in.Description,
 		DurationMinutes: int32(in.DurationMinutes),
 		PriceCents:      db.Int4(nil),
