@@ -6,6 +6,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"math"
 	"strings"
 
 	"github.com/jackc/pgx/v5"
@@ -43,6 +44,18 @@ func (in ServiceInput) validate() error {
 	}
 	if in.DurationMinutes <= 0 {
 		return ValidationError{"duration must be greater than 0 minutes"}
+	}
+	// duration_minutes backs an Int4 column (CreateService/UpdateService
+	// narrow to int32 below). atoiOrZero parses the form field into Go's
+	// int, which is 64 bits on every platform this runs on, so a value
+	// too large for int32 passes the check above and then wraps —
+	// possibly negative — in the narrowing cast, tripping the database's
+	// own CHECK on the small values and silently saving the wrong
+	// duration on the large ones. Rejecting it here, before the cast,
+	// turns that into the same validation message an out-of-range value
+	// already gets.
+	if in.DurationMinutes > math.MaxInt32 {
+		return ValidationError{"duration is too large"}
 	}
 	return nil
 }
