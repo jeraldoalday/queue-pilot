@@ -3,6 +3,14 @@
 	generate check check-all version build fmt \
 	web-install web-dev web-test web-e2e web-build web-check
 
+# check's gofmt gate pipes into `(! read)`, which relies on bash's `read`
+# defaulting to $REPLY with no arguments. On a system where /bin/sh is
+# dash (the default on Debian/Ubuntu), `read` with no arguments is itself
+# an error, and `!` negates that error into a false "nothing to format" —
+# so the gate never fails no matter what gofmt -l reports. Pinning the
+# recipe shell to bash keeps the gate honest everywhere make runs.
+SHELL := bash
+
 -include .env
 export
 
