@@ -1,4 +1,4 @@
-import { screen, waitFor } from "@testing-library/react";
+import { act, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -169,7 +169,9 @@ describe("TicketPage", () => {
     await user.click(button);
 
     expect(cancelMock).toHaveBeenCalledTimes(1);
-    release?.(ticket());
+    await act(async () => {
+      release?.(ticket());
+    });
   });
 
   // The issued time comes off the wire already rendered in the business's

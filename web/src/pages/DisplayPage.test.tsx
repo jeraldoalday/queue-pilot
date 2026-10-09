@@ -1,4 +1,4 @@
-import { screen } from "@testing-library/react";
+import { act, screen } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { ApiError } from "../api/client";
@@ -88,7 +88,9 @@ describe("DisplayPage", () => {
     renderDisplay();
     await screen.findByText("41");
 
-    await vi.advanceTimersByTimeAsync(15_000);
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(15_000);
+    });
 
     expect(screen.getByText("41")).toBeInTheDocument();
     vi.useRealTimers();

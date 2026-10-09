@@ -1,4 +1,4 @@
-import { screen, waitFor } from "@testing-library/react";
+import { act, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { Route } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -177,7 +177,9 @@ describe("QueueBoardPage", () => {
     await user.click(button);
 
     expect(joinMock).toHaveBeenCalledTimes(1);
-    release?.(ticket());
+    await act(async () => {
+      release?.(ticket());
+    });
   });
 
   it("shows the shared not-found wording for a queue that isn't there", async () => {
@@ -208,7 +210,9 @@ describe("QueueBoardPage", () => {
     renderBoard();
     await screen.findByRole("heading", { name: "Walk-ins" });
 
-    await vi.advanceTimersByTimeAsync(15_000);
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(15_000);
+    });
 
     expect(await screen.findByRole("alert")).toHaveTextContent(/may be a moment out of date/i);
     expect(screen.getByRole("heading", { name: "Walk-ins" })).toBeInTheDocument();

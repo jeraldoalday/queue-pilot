@@ -1,4 +1,4 @@
-import { fireEvent, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { Route } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -230,7 +230,9 @@ describe("BookPage", () => {
     await user.click(submit);
 
     expect(bookMock).toHaveBeenCalledTimes(1);
-    release?.(appointment());
+    await act(async () => {
+      release?.(appointment());
+    });
   });
 
   it("shows the shared not-found wording for a service that isn't bookable", async () => {

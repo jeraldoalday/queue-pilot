@@ -1,4 +1,4 @@
-import { screen, waitFor } from "@testing-library/react";
+import { act, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -127,7 +127,9 @@ describe("AppointmentPage", () => {
     await user.click(button);
 
     expect(cancelMock).toHaveBeenCalledTimes(1);
-    release?.(appointment());
+    await act(async () => {
+      release?.(appointment());
+    });
   });
 
   // The link is the credential, so a wrong or expired one has to fail the
