@@ -30,6 +30,10 @@ func TestServiceInputValidate(t *testing.T) {
 			in.Name = strings.Repeat("a", maxServiceNameLen+1)
 			return in
 		}},
+		{"description too long", func(in ServiceInput) ServiceInput {
+			in.Description = strings.Repeat("a", maxServiceDescriptionLen+1)
+			return in
+		}},
 	}
 
 	for _, tt := range tests {
@@ -56,5 +60,27 @@ func TestServiceInputValidateAllowsANameAtTheLengthLimit(t *testing.T) {
 	in := ServiceInput{Name: strings.Repeat("a", maxServiceNameLen), DurationMinutes: 30}
 	if err := in.validate(); err != nil {
 		t.Fatalf("name at the length limit was rejected: %v", err)
+	}
+}
+
+func TestServiceInputValidateAllowsADescriptionAtTheLengthLimit(t *testing.T) {
+	in := ServiceInput{
+		Name:            "Haircut",
+		Description:     strings.Repeat("a", maxServiceDescriptionLen),
+		DurationMinutes: 30,
+	}
+	if err := in.validate(); err != nil {
+		t.Fatalf("description at the length limit was rejected: %v", err)
+	}
+}
+
+func TestServiceInputValidateIgnoresTrailingWhitespaceWhenBoundingDescription(t *testing.T) {
+	in := ServiceInput{
+		Name:            "Haircut",
+		Description:     strings.Repeat("a", maxServiceDescriptionLen) + "   ",
+		DurationMinutes: 30,
+	}
+	if err := in.validate(); err != nil {
+		t.Fatalf("description padded only with whitespace past the limit was rejected: %v", err)
 	}
 }

@@ -36,6 +36,13 @@ func (e ValidationError) Error() string { return e.msg }
 // layout or the edit form it expands into. Deliberately generous.
 const maxServiceNameLen = 80
 
+// maxServiceDescriptionLen bounds the blurb shown under a service on the
+// public booking page (see public.templ). Unlike the name, which renders
+// in a table cell and an input, the description renders as a sentence a
+// customer reads while choosing — generous enough for that, not so long
+// that a pasted paragraph pushes the service list off the page.
+const maxServiceDescriptionLen = 280
+
 type ServiceInput struct {
 	Name            string
 	Description     string
@@ -50,6 +57,9 @@ func (in ServiceInput) validate() error {
 	}
 	if len(name) > maxServiceNameLen {
 		return ValidationError{fmt.Sprintf("service name must be %d characters or fewer", maxServiceNameLen)}
+	}
+	if len(strings.TrimSpace(in.Description)) > maxServiceDescriptionLen {
+		return ValidationError{fmt.Sprintf("description must be %d characters or fewer", maxServiceDescriptionLen)}
 	}
 	if in.DurationMinutes <= 0 {
 		return ValidationError{"duration must be greater than 0 minutes"}
@@ -88,7 +98,7 @@ func CreateService(ctx context.Context, pool *pgxpool.Pool, orgID string, in Ser
 		OrgID:           db.MustUUID(orgID),
 		Slug:            svcSlug,
 		Name:            name,
-		Description:     in.Description,
+		Description:     strings.TrimSpace(in.Description),
 		DurationMinutes: int32(in.DurationMinutes),
 		PriceCents:      db.Int4(nil), // billing is out of scope for the MVP
 		Active:          true,
@@ -124,7 +134,7 @@ func UpdateService(ctx context.Context, pool *pgxpool.Pool, orgID, serviceID str
 		ID:              db.MustUUID(serviceID),
 		OrgID:           db.MustUUID(orgID),
 		Name:            strings.TrimSpace(in.Name),
-		Description:     in.Description,
+		Description:     strings.TrimSpace(in.Description),
 		DurationMinutes: int32(in.DurationMinutes),
 		PriceCents:      db.Int4(nil),
 		Active:          in.Active,
