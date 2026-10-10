@@ -1,6 +1,9 @@
 package auth
 
-import "testing"
+import (
+	"strings"
+	"testing"
+)
 
 func TestSignupInputValidate(t *testing.T) {
 	valid := SignupInput{
@@ -23,6 +26,14 @@ func TestSignupInputValidate(t *testing.T) {
 		{"missing admin name", func(in SignupInput) SignupInput { in.AdminName = ""; return in }, true},
 		{"invalid email", func(in SignupInput) SignupInput { in.AdminEmail = "not-an-email"; return in }, true},
 		{"short password", func(in SignupInput) SignupInput { in.Password = "short"; return in }, true},
+		// bcrypt's GenerateFromPassword rejects anything past 72 bytes with
+		// ErrPasswordTooLong; this has to be caught here so it comes back
+		// as a ValidationError instead of reaching HashPassword and
+		// surfacing as an unexplained internal error.
+		{"password too long for bcrypt", func(in SignupInput) SignupInput {
+			in.Password = strings.Repeat("a", maxPasswordLen+1)
+			return in
+		}, true},
 	}
 
 	for _, tt := range tests {
@@ -38,5 +49,17 @@ func TestSignupInputValidate(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+func TestSignupInputValidateAllowsAPasswordAtBcryptsLimit(t *testing.T) {
+	in := SignupInput{
+		OrgName:    "Acme Dental",
+		AdminName:  "Jerry Alday",
+		AdminEmail: "jerry@acme.test",
+		Password:   strings.Repeat("a", maxPasswordLen),
+	}
+	if err := in.validate(); err != nil {
+		t.Fatalf("password at bcrypt's length limit was rejected: %v", err)
 	}
 }

@@ -52,6 +52,9 @@ func (in SignupInput) validate() error {
 	if len(in.Password) < 8 {
 		return ValidationError{"password must be at least 8 characters"}
 	}
+	if len(in.Password) > maxPasswordLen {
+		return ValidationError{fmt.Sprintf("password must be %d characters or fewer", maxPasswordLen)}
+	}
 	return nil
 }
 

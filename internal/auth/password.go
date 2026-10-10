@@ -7,6 +7,14 @@ import "golang.org/x/crypto/bcrypt"
 // golang.org/x/crypto keeps DefaultCost current for that purpose.
 const bcryptCost = bcrypt.DefaultCost
 
+// maxPasswordLen is bcrypt's own hard limit — GenerateFromPassword refuses
+// anything longer with ErrPasswordTooLong. Signup and staff creation check
+// this themselves so that case comes back as the same friendly "must be
+// N characters or fewer" ValidationError every other length bound in this
+// app does, rather than reaching HashPassword and surfacing as an
+// unexplained "Something went wrong".
+const maxPasswordLen = 72
+
 func HashPassword(plain string) (string, error) {
 	hash, err := bcrypt.GenerateFromPassword([]byte(plain), bcryptCost)
 	if err != nil {
