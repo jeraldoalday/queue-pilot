@@ -92,7 +92,7 @@ func Signup(ctx context.Context, pool *pgxpool.Pool, sessions *session.Store, in
 	orgID := id.New()
 	orgRow, err := q.CreateOrganization(ctx, sqlc.CreateOrganizationParams{
 		ID:       db.MustUUID(orgID),
-		Name:     in.OrgName,
+		Name:     strings.TrimSpace(in.OrgName),
 		Slug:     orgSlug,
 		Timezone: "UTC",
 	})
@@ -108,7 +108,7 @@ func Signup(ctx context.Context, pool *pgxpool.Pool, sessions *session.Store, in
 		ID:           db.MustUUID(userID),
 		OrgID:        orgRow.ID,
 		Email:        in.AdminEmail,
-		Name:         in.AdminName,
+		Name:         strings.TrimSpace(in.AdminName),
 		PasswordHash: hash,
 		Role:         string(tenant.RoleAdmin),
 	})

@@ -55,7 +55,7 @@ func CreateStaffUser(ctx context.Context, pool *pgxpool.Pool, orgID string, in C
 		ID:           db.MustUUID(id.New()),
 		OrgID:        db.MustUUID(orgID),
 		Email:        in.Email,
-		Name:         in.Name,
+		Name:         strings.TrimSpace(in.Name),
 		PasswordHash: hash,
 		Role:         string(tenant.RoleStaff),
 	})
