@@ -59,6 +59,7 @@ func (in SignupInput) validate() error {
 }
 
 func looksLikeEmail(s string) bool {
+	s = strings.TrimSpace(s)
 	at := strings.IndexByte(s, '@')
 	return at > 0 && at < len(s)-1 && !strings.ContainsAny(s, " \t\n")
 }
@@ -107,7 +108,7 @@ func Signup(ctx context.Context, pool *pgxpool.Pool, sessions *session.Store, in
 	userRow, err := q.CreateUser(ctx, sqlc.CreateUserParams{
 		ID:           db.MustUUID(userID),
 		OrgID:        orgRow.ID,
-		Email:        in.AdminEmail,
+		Email:        strings.TrimSpace(in.AdminEmail),
 		Name:         strings.TrimSpace(in.AdminName),
 		PasswordHash: hash,
 		Role:         string(tenant.RoleAdmin),

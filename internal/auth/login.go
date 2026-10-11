@@ -3,6 +3,7 @@ package auth
 import (
 	"context"
 	"errors"
+	"strings"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -20,7 +21,10 @@ import (
 func Login(ctx context.Context, pool *pgxpool.Pool, sessions *session.Store, email, password, userAgent, ip string) (session.Identity, error) {
 	q := sqlc.New(pool)
 
-	user, err := q.GetUserByEmail(ctx, email)
+	// Trimmed the same way the stored address is: a mobile keyboard's
+	// auto-capitalize-and-space or a pasted address with a trailing
+	// newline must not turn a correct password into ErrInvalidCredentials.
+	user, err := q.GetUserByEmail(ctx, strings.TrimSpace(email))
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			// No account to compare against, so compare against nothing:
