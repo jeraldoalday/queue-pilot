@@ -1,6 +1,7 @@
 package appointment
 
 import (
+	"strings"
 	"testing"
 	"time"
 )
@@ -27,6 +28,18 @@ func TestBookInputValidate(t *testing.T) {
 		{"missing staff", func(in BookInput) BookInput { in.StaffUserID = ""; return in }},
 		{"blank customer name", func(in BookInput) BookInput { in.CustomerName = "   "; return in }},
 		{"blank customer email", func(in BookInput) BookInput { in.CustomerEmail = ""; return in }},
+		{"customer name too long", func(in BookInput) BookInput {
+			in.CustomerName = strings.Repeat("a", maxCustomerNameLen+1)
+			return in
+		}},
+		{"customer email too long", func(in BookInput) BookInput {
+			in.CustomerEmail = strings.Repeat("a", maxCustomerEmailLen+1) + "@example.test"
+			return in
+		}},
+		{"customer phone too long", func(in BookInput) BookInput {
+			in.CustomerPhone = strings.Repeat("5", maxCustomerPhoneLen+1)
+			return in
+		}},
 		{"zero start time", func(in BookInput) BookInput { in.StartsAt = time.Time{}; return in }},
 	}
 

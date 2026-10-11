@@ -5,6 +5,7 @@ package appointment
 import (
 	"context"
 	"errors"
+	"fmt"
 	"strings"
 	"time"
 
@@ -33,6 +34,20 @@ type ValidationError struct{ msg string }
 
 func (e ValidationError) Error() string { return e.msg }
 
+// maxCustomerNameLen bounds a customer name the same way queue.TicketInput
+// bounds one: so a pasted essay can't break the confirmation page or the
+// admin booking form it's edited from. Deliberately generous.
+const maxCustomerNameLen = 60
+
+// maxCustomerEmailLen bounds the email an appointment is confirmed to.
+// RFC 5321 caps an address at 254 characters; this is that bound, not a
+// stylistic choice like the name and phone ones above it.
+const maxCustomerEmailLen = 254
+
+// maxCustomerPhoneLen bounds the optional callback number the same way
+// queue.TicketInput bounds one.
+const maxCustomerPhoneLen = 32
+
 type BookInput struct {
 	ServiceID     string
 	StaffUserID   string
@@ -52,11 +67,22 @@ func (in BookInput) validate() error {
 	if !db.IsUUID(in.StaffUserID) {
 		return ValidationError{"please choose a staff member"}
 	}
-	if strings.TrimSpace(in.CustomerName) == "" {
+	name := strings.TrimSpace(in.CustomerName)
+	if name == "" {
 		return ValidationError{"customer name is required"}
 	}
-	if strings.TrimSpace(in.CustomerEmail) == "" {
+	if len(name) > maxCustomerNameLen {
+		return ValidationError{fmt.Sprintf("customer name must be %d characters or fewer", maxCustomerNameLen)}
+	}
+	email := strings.TrimSpace(in.CustomerEmail)
+	if email == "" {
 		return ValidationError{"customer email is required"}
+	}
+	if len(email) > maxCustomerEmailLen {
+		return ValidationError{fmt.Sprintf("customer email must be %d characters or fewer", maxCustomerEmailLen)}
+	}
+	if len(strings.TrimSpace(in.CustomerPhone)) > maxCustomerPhoneLen {
+		return ValidationError{fmt.Sprintf("customer phone number must be %d characters or fewer", maxCustomerPhoneLen)}
 	}
 	if in.StartsAt.IsZero() {
 		return ValidationError{"please choose a time slot"}
@@ -138,9 +164,9 @@ func Book(ctx context.Context, pool *pgxpool.Pool, orgID string, in BookInput) (
 		OrgID:         db.MustUUID(orgID),
 		ServiceID:     db.MustUUID(in.ServiceID),
 		StaffUserID:   db.MustUUID(in.StaffUserID),
-		CustomerName:  in.CustomerName,
-		CustomerEmail: in.CustomerEmail,
-		CustomerPhone: db.Text(in.CustomerPhone),
+		CustomerName:  strings.TrimSpace(in.CustomerName),
+		CustomerEmail: strings.TrimSpace(in.CustomerEmail),
+		CustomerPhone: db.Text(strings.TrimSpace(in.CustomerPhone)),
 		StartsAt:      db.Timestamptz(in.StartsAt),
 		EndsAt:        db.Timestamptz(endsAt),
 	})
