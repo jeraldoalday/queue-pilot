@@ -82,6 +82,17 @@ describe("BookPage", () => {
     expect(screen.getByLabelText(/your name/i)).toBeInTheDocument();
   });
 
+  it("bounds the details fields to what the server accepts, so a customer finds out before submitting", async () => {
+    const user = userEvent.setup();
+    renderBook();
+
+    await user.click(await screen.findByRole("button", { name: "10:00 am" }));
+
+    expect(screen.getByLabelText(/your name/i)).toHaveAttribute("maxLength", "60");
+    expect(screen.getByLabelText(/email/i)).toHaveAttribute("maxLength", "254");
+    expect(screen.getByLabelText(/phone number/i)).toHaveAttribute("maxLength", "32");
+  });
+
   it("names the booking on the submit button, so nobody books the wrong hour", async () => {
     const user = userEvent.setup();
     renderBook();

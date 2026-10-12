@@ -209,6 +209,7 @@ export function BookPage() {
                 type="text"
                 value={name}
                 autoComplete="name"
+                maxLength={60}
                 onChange={(event) => setName(event.target.value)}
               />
             </div>
@@ -220,6 +221,7 @@ export function BookPage() {
                 type="email"
                 value={email}
                 autoComplete="email"
+                maxLength={254}
                 onChange={(event) => setEmail(event.target.value)}
               />
               <p className="hint">
@@ -235,6 +237,7 @@ export function BookPage() {
                 type="tel"
                 value={phone}
                 autoComplete="tel"
+                maxLength={32}
                 onChange={(event) => setPhone(event.target.value)}
               />
             </div>
