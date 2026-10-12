@@ -22,11 +22,18 @@ type CreateStaffInput struct {
 }
 
 func (in CreateStaffInput) validate() error {
-	if strings.TrimSpace(in.Name) == "" {
+	name := strings.TrimSpace(in.Name)
+	if name == "" {
 		return ValidationError{"name is required"}
+	}
+	if len(name) > maxPersonNameLen {
+		return ValidationError{fmt.Sprintf("name must be %d characters or fewer", maxPersonNameLen)}
 	}
 	if !looksLikeEmail(in.Email) {
 		return ValidationError{"a valid email is required"}
+	}
+	if len(strings.TrimSpace(in.Email)) > maxEmailLen {
+		return ValidationError{fmt.Sprintf("email must be %d characters or fewer", maxEmailLen)}
 	}
 	if len(in.Password) < 8 {
 		return ValidationError{"password must be at least 8 characters"}

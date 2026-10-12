@@ -23,8 +23,20 @@ func TestSignupInputValidate(t *testing.T) {
 		wantErr bool
 	}{
 		{"missing org name", func(in SignupInput) SignupInput { in.OrgName = "  "; return in }, true},
+		{"org name too long", func(in SignupInput) SignupInput {
+			in.OrgName = strings.Repeat("a", maxOrgNameLen+1)
+			return in
+		}, true},
 		{"missing admin name", func(in SignupInput) SignupInput { in.AdminName = ""; return in }, true},
+		{"admin name too long", func(in SignupInput) SignupInput {
+			in.AdminName = strings.Repeat("a", maxPersonNameLen+1)
+			return in
+		}, true},
 		{"invalid email", func(in SignupInput) SignupInput { in.AdminEmail = "not-an-email"; return in }, true},
+		{"email too long", func(in SignupInput) SignupInput {
+			in.AdminEmail = strings.Repeat("a", maxEmailLen+1) + "@acme.test"
+			return in
+		}, true},
 		{"short password", func(in SignupInput) SignupInput { in.Password = "short"; return in }, true},
 		// bcrypt's GenerateFromPassword rejects anything past 72 bytes with
 		// ErrPasswordTooLong; this has to be caught here so it comes back

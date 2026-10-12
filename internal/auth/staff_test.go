@@ -21,7 +21,15 @@ func TestCreateStaffInputValidate(t *testing.T) {
 		mutate func(in CreateStaffInput) CreateStaffInput
 	}{
 		{"missing name", func(in CreateStaffInput) CreateStaffInput { in.Name = "  "; return in }},
+		{"name too long", func(in CreateStaffInput) CreateStaffInput {
+			in.Name = strings.Repeat("a", maxPersonNameLen+1)
+			return in
+		}},
 		{"invalid email", func(in CreateStaffInput) CreateStaffInput { in.Email = "not-an-email"; return in }},
+		{"email too long", func(in CreateStaffInput) CreateStaffInput {
+			in.Email = strings.Repeat("a", maxEmailLen+1) + "@acme.test"
+			return in
+		}},
 		{"short password", func(in CreateStaffInput) CreateStaffInput { in.Password = "short"; return in }},
 		// Same bcrypt limit SignupInput enforces: see signup_test.go.
 		{"password too long for bcrypt", func(in CreateStaffInput) CreateStaffInput {

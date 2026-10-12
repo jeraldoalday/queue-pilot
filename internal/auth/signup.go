@@ -30,6 +30,18 @@ type ValidationError struct{ msg string }
 
 func (e ValidationError) Error() string { return e.msg }
 
+// maxOrgNameLen bounds the business name entered at signup. It mirrors
+// org.maxNameLen — the same name is editable later from /app/settings and
+// appears on every public page this organisation has.
+const maxOrgNameLen = 100
+
+// maxPersonNameLen bounds an admin's or staff member's own name.
+const maxPersonNameLen = 100
+
+// maxEmailLen is RFC 5321's own limit on an address, the same bound a
+// customer's booking email is held to (see appointment.maxCustomerEmailLen).
+const maxEmailLen = 254
+
 type SignupInput struct {
 	OrgName    string
 	AdminName  string
@@ -40,14 +52,25 @@ type SignupInput struct {
 }
 
 func (in SignupInput) validate() error {
-	if strings.TrimSpace(in.OrgName) == "" {
+	orgName := strings.TrimSpace(in.OrgName)
+	if orgName == "" {
 		return ValidationError{"organization name is required"}
 	}
-	if strings.TrimSpace(in.AdminName) == "" {
+	if len(orgName) > maxOrgNameLen {
+		return ValidationError{fmt.Sprintf("organization name must be %d characters or fewer", maxOrgNameLen)}
+	}
+	adminName := strings.TrimSpace(in.AdminName)
+	if adminName == "" {
 		return ValidationError{"your name is required"}
+	}
+	if len(adminName) > maxPersonNameLen {
+		return ValidationError{fmt.Sprintf("your name must be %d characters or fewer", maxPersonNameLen)}
 	}
 	if !looksLikeEmail(in.AdminEmail) {
 		return ValidationError{"a valid email is required"}
+	}
+	if len(strings.TrimSpace(in.AdminEmail)) > maxEmailLen {
+		return ValidationError{fmt.Sprintf("email must be %d characters or fewer", maxEmailLen)}
 	}
 	if len(in.Password) < 8 {
 		return ValidationError{"password must be at least 8 characters"}
