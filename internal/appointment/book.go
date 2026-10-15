@@ -78,6 +78,14 @@ func (in BookInput) validate() error {
 	if email == "" {
 		return ValidationError{"customer email is required"}
 	}
+	// The public booking path (BookPublic) already holds the customer's
+	// email to this same loose shape check; Book is also reachable
+	// directly from the admin console's own booking form, which skipped
+	// it and would store whatever text was typed into the field as long
+	// as it was non-empty and within the length bound.
+	if !looksLikeEmail(email) {
+		return ValidationError{"please enter a valid customer email"}
+	}
 	if len(email) > maxCustomerEmailLen {
 		return ValidationError{fmt.Sprintf("customer email must be %d characters or fewer", maxCustomerEmailLen)}
 	}

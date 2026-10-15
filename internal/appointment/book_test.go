@@ -28,6 +28,10 @@ func TestBookInputValidate(t *testing.T) {
 		{"missing staff", func(in BookInput) BookInput { in.StaffUserID = ""; return in }},
 		{"blank customer name", func(in BookInput) BookInput { in.CustomerName = "   "; return in }},
 		{"blank customer email", func(in BookInput) BookInput { in.CustomerEmail = ""; return in }},
+		{"malformed customer email", func(in BookInput) BookInput {
+			in.CustomerEmail = "not an email"
+			return in
+		}},
 		{"customer name too long", func(in BookInput) BookInput {
 			in.CustomerName = strings.Repeat("a", maxCustomerNameLen+1)
 			return in
