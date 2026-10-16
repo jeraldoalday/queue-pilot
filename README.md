@@ -4,6 +4,8 @@ Appointment booking and walk-in queue management, built as a multi-tenant
 Go service. Server-rendered with [templ](https://templ.guide) + htmx +
 Tailwind CSS — one binary, no Node/npm build step.
 
+> **How this project is built:** I develop this service with AI coding agents. I decide what the booking and queue rules should be, review each change and its tests, and merge what holds up.
+
 ## What it does
 
 **Appointments.** Services with durations, staff assigned to the services
