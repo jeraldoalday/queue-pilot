@@ -64,22 +64,6 @@ func TestSignupInputValidate(t *testing.T) {
 	}
 }
 
-// A mobile keyboard's auto-space or a pasted address with a trailing
-// newline is incidental whitespace, not an invalid address — looksLikeEmail
-// has to look past it the same way every other field here is trimmed
-// before being judged blank or too long.
-func TestLooksLikeEmailIgnoresSurroundingWhitespace(t *testing.T) {
-	if !looksLikeEmail("  jerry@acme.test\n") {
-		t.Error("email with surrounding whitespace was rejected")
-	}
-	if looksLikeEmail("not an email") {
-		t.Error("string with internal whitespace and no @ was accepted")
-	}
-	if looksLikeEmail("  ") {
-		t.Error("blank string was accepted")
-	}
-}
-
 func TestSignupInputValidateAllowsAPasswordAtBcryptsLimit(t *testing.T) {
 	in := SignupInput{
 		OrgName:    "Acme Dental",

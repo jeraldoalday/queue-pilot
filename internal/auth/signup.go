@@ -11,6 +11,7 @@ import (
 
 	"github.com/jeraldoalday/queuepilot/internal/db"
 	"github.com/jeraldoalday/queuepilot/internal/db/sqlc"
+	"github.com/jeraldoalday/queuepilot/internal/platform/emailshape"
 	"github.com/jeraldoalday/queuepilot/internal/platform/id"
 	"github.com/jeraldoalday/queuepilot/internal/platform/slug"
 	"github.com/jeraldoalday/queuepilot/internal/session"
@@ -66,7 +67,7 @@ func (in SignupInput) validate() error {
 	if len(adminName) > maxPersonNameLen {
 		return ValidationError{fmt.Sprintf("your name must be %d characters or fewer", maxPersonNameLen)}
 	}
-	if !looksLikeEmail(in.AdminEmail) {
+	if !emailshape.LooksLikeEmail(in.AdminEmail) {
 		return ValidationError{"a valid email is required"}
 	}
 	if len(strings.TrimSpace(in.AdminEmail)) > maxEmailLen {
@@ -79,12 +80,6 @@ func (in SignupInput) validate() error {
 		return ValidationError{fmt.Sprintf("password must be %d characters or fewer", maxPasswordLen)}
 	}
 	return nil
-}
-
-func looksLikeEmail(s string) bool {
-	s = strings.TrimSpace(s)
-	at := strings.IndexByte(s, '@')
-	return at > 0 && at < len(s)-1 && !strings.ContainsAny(s, " \t\n")
 }
 
 // Signup creates a new organization and its first (admin) user, and starts

@@ -11,6 +11,7 @@ import (
 
 	"github.com/jeraldoalday/queuepilot/internal/db"
 	"github.com/jeraldoalday/queuepilot/internal/db/sqlc"
+	"github.com/jeraldoalday/queuepilot/internal/platform/emailshape"
 	"github.com/jeraldoalday/queuepilot/internal/platform/id"
 	"github.com/jeraldoalday/queuepilot/internal/tenant"
 )
@@ -29,7 +30,7 @@ func (in CreateStaffInput) validate() error {
 	if len(name) > maxPersonNameLen {
 		return ValidationError{fmt.Sprintf("name must be %d characters or fewer", maxPersonNameLen)}
 	}
-	if !looksLikeEmail(in.Email) {
+	if !emailshape.LooksLikeEmail(in.Email) {
 		return ValidationError{"a valid email is required"}
 	}
 	if len(strings.TrimSpace(in.Email)) > maxEmailLen {

@@ -13,6 +13,7 @@ import (
 	"github.com/jeraldoalday/queuepilot/internal/availability"
 	"github.com/jeraldoalday/queuepilot/internal/db"
 	"github.com/jeraldoalday/queuepilot/internal/db/sqlc"
+	"github.com/jeraldoalday/queuepilot/internal/platform/emailshape"
 )
 
 // MinLeadTime is how far ahead a customer booking themselves must book.
@@ -294,7 +295,7 @@ func BookPublic(ctx context.Context, pool *pgxpool.Pool, orgID string, in Public
 	if strings.TrimSpace(in.CustomerName) == "" {
 		return sqlc.Appointment{}, ValidationError{"please enter your name"}
 	}
-	if !looksLikeEmail(in.CustomerEmail) {
+	if !emailshape.LooksLikeEmail(in.CustomerEmail) {
 		return sqlc.Appointment{}, ValidationError{"please enter an email we can send the confirmation to"}
 	}
 	if in.StartsAt.IsZero() {
@@ -402,13 +403,4 @@ func CancelPublic(ctx context.Context, pool *pgxpool.Pool, orgID, appointmentID 
 // ListBookableServices returns the services the public page offers.
 func ListBookableServices(ctx context.Context, pool *pgxpool.Pool, orgID string) ([]sqlc.Service, error) {
 	return sqlc.New(pool).ListBookableServicesByOrg(ctx, db.MustUUID(orgID))
-}
-
-// looksLikeEmail is the same deliberately loose check auth uses: enough to
-// catch a typo'd or empty field, not an attempt to validate deliverability,
-// which only sending mail can do.
-func looksLikeEmail(s string) bool {
-	s = strings.TrimSpace(s)
-	at := strings.Index(s, "@")
-	return at > 0 && at < len(s)-1 && !strings.ContainsAny(s, " \t\r\n")
 }

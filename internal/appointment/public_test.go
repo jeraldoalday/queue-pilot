@@ -238,19 +238,3 @@ func TestHasNextBookableDay(t *testing.T) {
 		})
 	}
 }
-
-func TestLooksLikeEmail(t *testing.T) {
-	valid := []string{"a@b.co", "someone@example.test", " padded@example.test "}
-	for _, s := range valid {
-		if !looksLikeEmail(s) {
-			t.Errorf("looksLikeEmail(%q) = false, want true", s)
-		}
-	}
-
-	invalid := []string{"", "nobody", "@example.test", "someone@", "two words@example.test", "a@b\nc"}
-	for _, s := range invalid {
-		if looksLikeEmail(s) {
-			t.Errorf("looksLikeEmail(%q) = true, want false", s)
-		}
-	}
-}

@@ -14,6 +14,7 @@ import (
 
 	"github.com/jeraldoalday/queuepilot/internal/db"
 	"github.com/jeraldoalday/queuepilot/internal/db/sqlc"
+	"github.com/jeraldoalday/queuepilot/internal/platform/emailshape"
 	"github.com/jeraldoalday/queuepilot/internal/platform/id"
 )
 
@@ -83,7 +84,7 @@ func (in BookInput) validate() error {
 	// directly from the admin console's own booking form, which skipped
 	// it and would store whatever text was typed into the field as long
 	// as it was non-empty and within the length bound.
-	if !looksLikeEmail(email) {
+	if !emailshape.LooksLikeEmail(email) {
 		return ValidationError{"please enter a valid customer email"}
 	}
 	if len(email) > maxCustomerEmailLen {
