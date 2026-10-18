@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { formatJoinWait, formatPosition, formatWait, ordinal } from "./wait";
+import { formatJoinWait, formatPosition, formatWait } from "./wait";
 
 // This table is the Go table in internal/queue/wait_test.go, case for
 // case. That is the point: the same customer can read the server-rendered
@@ -63,25 +63,5 @@ describe("formatPosition", () => {
 
   it("counts the holder into their own position", () => {
     expect(formatPosition(4)).toBe("4 in line");
-  });
-});
-
-describe("ordinal", () => {
-  it.each([
-    [1, "1st"],
-    [2, "2nd"],
-    [3, "3rd"],
-    [4, "4th"],
-    [11, "11th"],
-    [12, "12th"],
-    [13, "13th"],
-    [21, "21st"],
-    [22, "22nd"],
-    [23, "23rd"],
-    [101, "101st"],
-    [111, "111th"],
-    [112, "112th"],
-  ])("renders %i as %s", (n, want) => {
-    expect(ordinal(n)).toBe(want);
   });
 });

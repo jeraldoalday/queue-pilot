@@ -86,26 +86,3 @@ export function formatPosition(position: number): string {
   return `${position} in line`;
 }
 
-/**
- * An ordinal, for the one place a bare number reads badly ("2nd in line"
- * rather than "position 2"). Kept small and English-only: the app has no
- * localisation, and pretending otherwise with Intl.PluralRules here would
- * suggest a capability the rest of the product does not have.
- */
-export function ordinal(n: number): string {
-  const abs = Math.abs(Math.trunc(n));
-  const lastTwo = abs % 100;
-  if (lastTwo >= 11 && lastTwo <= 13) {
-    return `${n}th`;
-  }
-  switch (abs % 10) {
-    case 1:
-      return `${n}st`;
-    case 2:
-      return `${n}nd`;
-    case 3:
-      return `${n}rd`;
-    default:
-      return `${n}th`;
-  }
-}
