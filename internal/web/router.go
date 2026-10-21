@@ -37,6 +37,7 @@ type Server struct {
 	queue        *queue.Handlers
 	api          *api.Handlers
 	publicLimit  *ratelimit.Limiter
+	authLimit    *ratelimit.Limiter
 	// metrics is nil when METRICS_TOKEN is unset, and the middleware then
 	// leaves every request untouched rather than timing work nobody can
 	// read.
@@ -60,6 +61,7 @@ func NewServer(cfg config.Config, log *slog.Logger, pool *pgxpool.Pool) *Server 
 		queue:        queue.NewHandlers(pool, log),
 		api:          api.NewHandlers(pool, log),
 		publicLimit:  ratelimit.New(publicBurst, publicInterval, clock.Real{}),
+		authLimit:    ratelimit.New(authBurst, authInterval, clock.Real{}),
 		metrics:      newRegistry(cfg),
 		startedAt:    time.Now(),
 	}
@@ -87,6 +89,22 @@ const (
 	publicInterval = 30 * time.Second
 )
 
+// authBurst and authInterval bound how fast one client can attempt to
+// sign in. The public forms above protect a business's queue from being
+// filled with junk; this protects an account from being guessed into.
+// Login already equalises its own timing between a wrong password and an
+// unknown address (see EqualiseVerifyCost) so that one answer cannot be
+// told from the other by how long it took — but that care buys nothing
+// against a client simply given unlimited tries, since no timing
+// side-channel is needed to find the right password eventually if wrong
+// ones cost nothing. The allowance is tighter than the public forms':
+// ten attempts is room for a person who mistypes a password a few times,
+// not for a list of common ones.
+const (
+	authBurst    = 10
+	authInterval = time.Minute
+)
+
 func (s *Server) Routes() http.Handler {
 	mux := http.NewServeMux()
 
@@ -104,7 +122,9 @@ func (s *Server) Routes() http.Handler {
 	mux.HandleFunc("GET /signup", s.auth.GetSignup)
 	mux.HandleFunc("POST /signup", s.auth.PostSignup)
 	mux.HandleFunc("GET /login", s.auth.GetLogin)
-	mux.HandleFunc("POST /login", s.auth.PostLogin)
+	// Limited for the reason authBurst is: a sign-in form with no limit is
+	// an unlimited number of guesses at somebody's password.
+	mux.Handle("POST /login", ratelimit.Middleware(s.authLimit, s.cfg.TrustProxyHeaders, s.log)(http.HandlerFunc(s.auth.PostLogin)))
 
 	requireAuth := auth.RequireAuth(s.sessions, s.log)
 	requireAdmin := auth.RequireRole(tenant.RoleAdmin)

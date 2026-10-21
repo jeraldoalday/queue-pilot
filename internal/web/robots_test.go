@@ -6,6 +6,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/jeraldoalday/queuepilot/internal/platform/clock"
 	"github.com/jeraldoalday/queuepilot/internal/platform/ratelimit"
@@ -110,6 +111,7 @@ func newRoutesOnlyServer() *Server {
 	return &Server{
 		log:         slog.New(slog.DiscardHandler),
 		publicLimit: ratelimit.New(publicBurst, publicInterval, clock.Real{}),
+		authLimit:   ratelimit.New(authBurst, authInterval, clock.Real{}),
 	}
 }
 
@@ -123,5 +125,58 @@ func TestRobotsTxtIsRouted(t *testing.T) {
 	}
 	if !strings.Contains(rec.Body.String(), "User-agent") {
 		t.Errorf("body = %q", rec.Body.String())
+	}
+}
+
+// A sign-in form with no limit is an unlimited number of guesses at
+// somebody's password. This asserts the route actually carries the
+// limiter, not just that the limiter works in isolation.
+func TestLoginIsRateLimited(t *testing.T) {
+	s := newRoutesOnlyServer()
+	s.authLimit = ratelimit.New(1, time.Minute, clock.Real{})
+
+	req := httptest.NewRequest(http.MethodPost, "/login", http.NoBody)
+	// Spend the one token this client has, so the request below is
+	// refused by the limiter before it can reach the nil auth handler.
+	s.authLimit.Allow(ratelimit.ClientKey(req, false))
+
+	rec := httptest.NewRecorder()
+	s.Routes().ServeHTTP(rec, httptest.NewRequest(http.MethodPost, "/login", http.NoBody))
+
+	if rec.Code != http.StatusTooManyRequests {
+		t.Fatalf("status = %d, want 429", rec.Code)
+	}
+	if rec.Header().Get("Retry-After") == "" {
+		t.Error("no Retry-After header — a well-behaved client has nothing to back off by")
+	}
+}
+
+// A failed login attempt and a fresh sign-up must not draw on the same
+// allowance: a customer who mistyped a password a few times has done
+// nothing that should keep them from creating an account next.
+func TestLoginAndSignupHaveSeparateLimits(t *testing.T) {
+	s := newRoutesOnlyServer()
+	s.authLimit = ratelimit.New(1, time.Minute, clock.Real{})
+
+	loginReq := httptest.NewRequest(http.MethodPost, "/login", http.NoBody)
+	s.authLimit.Allow(ratelimit.ClientKey(loginReq, false))
+
+	routes := s.Routes()
+
+	limited := httptest.NewRecorder()
+	routes.ServeHTTP(limited, httptest.NewRequest(http.MethodPost, "/login", http.NoBody))
+	if limited.Code != http.StatusTooManyRequests {
+		t.Fatalf("login after its one token spent = %d, want 429", limited.Code)
+	}
+
+	// Signup has no body here, so it reaches PostSignup on a nil auth
+	// Handlers and panics on the nil pool — recovered by the router's own
+	// RecoverPanic, which answers 500. What matters is that it is not 429:
+	// the request got past the auth limiter rather than being refused by
+	// an allowance login had already spent.
+	notLimited := httptest.NewRecorder()
+	routes.ServeHTTP(notLimited, httptest.NewRequest(http.MethodPost, "/signup", strings.NewReader("")))
+	if notLimited.Code == http.StatusTooManyRequests {
+		t.Error("signup was refused by login's rate limit — the two should not share one allowance")
 	}
 }
