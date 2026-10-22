@@ -112,6 +112,7 @@ func newRoutesOnlyServer() *Server {
 		log:         slog.New(slog.DiscardHandler),
 		publicLimit: ratelimit.New(publicBurst, publicInterval, clock.Real{}),
 		authLimit:   ratelimit.New(authBurst, authInterval, clock.Real{}),
+		signupLimit: ratelimit.New(signupBurst, signupInterval, clock.Real{}),
 	}
 }
 
@@ -142,6 +143,29 @@ func TestLoginIsRateLimited(t *testing.T) {
 
 	rec := httptest.NewRecorder()
 	s.Routes().ServeHTTP(rec, httptest.NewRequest(http.MethodPost, "/login", http.NoBody))
+
+	if rec.Code != http.StatusTooManyRequests {
+		t.Fatalf("status = %d, want 429", rec.Code)
+	}
+	if rec.Header().Get("Retry-After") == "" {
+		t.Error("no Retry-After header — a well-behaved client has nothing to back off by")
+	}
+}
+
+// A sign-up form with no limit is an unlimited number of accounts for one
+// client to create. This asserts the route actually carries the limiter,
+// not just that the limiter works in isolation.
+func TestSignupIsRateLimited(t *testing.T) {
+	s := newRoutesOnlyServer()
+	s.signupLimit = ratelimit.New(1, time.Minute, clock.Real{})
+
+	req := httptest.NewRequest(http.MethodPost, "/signup", http.NoBody)
+	// Spend the one token this client has, so the request below is
+	// refused by the limiter before it can reach the nil auth handler.
+	s.signupLimit.Allow(ratelimit.ClientKey(req, false))
+
+	rec := httptest.NewRecorder()
+	s.Routes().ServeHTTP(rec, httptest.NewRequest(http.MethodPost, "/signup", http.NoBody))
 
 	if rec.Code != http.StatusTooManyRequests {
 		t.Fatalf("status = %d, want 429", rec.Code)

@@ -38,6 +38,7 @@ type Server struct {
 	api          *api.Handlers
 	publicLimit  *ratelimit.Limiter
 	authLimit    *ratelimit.Limiter
+	signupLimit  *ratelimit.Limiter
 	// metrics is nil when METRICS_TOKEN is unset, and the middleware then
 	// leaves every request untouched rather than timing work nobody can
 	// read.
@@ -62,6 +63,7 @@ func NewServer(cfg config.Config, log *slog.Logger, pool *pgxpool.Pool) *Server 
 		api:          api.NewHandlers(pool, log),
 		publicLimit:  ratelimit.New(publicBurst, publicInterval, clock.Real{}),
 		authLimit:    ratelimit.New(authBurst, authInterval, clock.Real{}),
+		signupLimit:  ratelimit.New(signupBurst, signupInterval, clock.Real{}),
 		metrics:      newRegistry(cfg),
 		startedAt:    time.Now(),
 	}
@@ -105,6 +107,20 @@ const (
 	authInterval = time.Minute
 )
 
+// signupBurst and signupInterval bound how fast one client can create an
+// account. This is its own limiter rather than a share of authLimit's: a
+// customer who mistyped a password a few times has done nothing that
+// should keep them from signing up next (see
+// TestLoginAndSignupHaveSeparateLimits), so the two cannot draw on one
+// allowance. The bucket is tighter than login's — signing up hashes a new
+// password and writes an org, an admin, and a session, where a failed
+// login only verifies one — so a client gets fewer of these before
+// waiting.
+const (
+	signupBurst    = 5
+	signupInterval = 5 * time.Minute
+)
+
 func (s *Server) Routes() http.Handler {
 	mux := http.NewServeMux()
 
@@ -120,7 +136,9 @@ func (s *Server) Routes() http.Handler {
 	mux.HandleFunc("GET /{$}", s.handleHome)
 
 	mux.HandleFunc("GET /signup", s.auth.GetSignup)
-	mux.HandleFunc("POST /signup", s.auth.PostSignup)
+	// Limited for the reason signupBurst is: a sign-up form with no limit
+	// is an unlimited number of accounts for one client to create.
+	mux.Handle("POST /signup", ratelimit.Middleware(s.signupLimit, s.cfg.TrustProxyHeaders, s.log)(http.HandlerFunc(s.auth.PostSignup)))
 	mux.HandleFunc("GET /login", s.auth.GetLogin)
 	// Limited for the reason authBurst is: a sign-in form with no limit is
 	// an unlimited number of guesses at somebody's password.
