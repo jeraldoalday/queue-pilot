@@ -504,3 +504,19 @@ func TestPlural(t *testing.T) {
 		}
 	}
 }
+
+func TestContentDisposition(t *testing.T) {
+	got := contentDisposition("front-desk-2026-03-03.csv")
+	want := `attachment; filename="front-desk-2026-03-03.csv"`
+	if got != want {
+		t.Errorf("contentDisposition(...) = %q, want %q", got, want)
+	}
+}
+
+func TestContentDispositionMatchesExportFilename(t *testing.T) {
+	got := contentDisposition(ExportFilename("front-desk", reportDay()))
+	want := `attachment; filename="front-desk-2026-03-03.csv"`
+	if got != want {
+		t.Errorf("contentDisposition(ExportFilename(...)) = %q, want %q", got, want)
+	}
+}
