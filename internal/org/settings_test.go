@@ -140,3 +140,29 @@ func TestCurrentOffsetRejectsAnUnknownZone(t *testing.T) {
 		t.Error("CurrentOffset accepted a zone that does not exist")
 	}
 }
+
+// describeZone is what the settings page shows beside the timezone field,
+// so a person can check it against a clock they can see rather than trust
+// an IANA name they may not recognise.
+func TestDescribeZone(t *testing.T) {
+	// A Wednesday, so the formatted string's weekday name is predictable.
+	at := time.Date(2026, time.January, 14, 9, 30, 0, 0, time.UTC)
+
+	local, offset, ok := describeZone("Asia/Tokyo", at)
+	if !ok {
+		t.Fatal("describeZone reported a real zone as unknown")
+	}
+	if offset != "+09:00" {
+		t.Errorf("offset = %q, want +09:00", offset)
+	}
+	if local != "18:30 on Wednesday 14 January" {
+		t.Errorf("local = %q, want the Tokyo-local time and date", local)
+	}
+}
+
+func TestDescribeZoneRejectsAnUnknownZone(t *testing.T) {
+	_, _, ok := describeZone("Mars/Olympus", time.Now())
+	if ok {
+		t.Error("describeZone accepted a zone that does not exist")
+	}
+}
