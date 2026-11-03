@@ -229,6 +229,26 @@ func TestFoldNeverSplitsARune(t *testing.T) {
 	}
 }
 
+// é above is two octets; a name with an emoji in it exercises the other
+// end of runeLen, the four-octet case, which TestFoldNeverSplitsARune
+// never reaches.
+func TestFoldNeverSplitsAFourByteRune(t *testing.T) {
+	line := "SUMMARY:" + strings.Repeat("🎉", 200)
+	folded := fold(line)
+
+	for _, piece := range strings.Split(folded, crlf) {
+		if len(piece) > maxLineOctets {
+			t.Errorf("piece is %d octets, want at most %d", len(piece), maxLineOctets)
+		}
+		if !utf8.ValidString(piece) {
+			t.Errorf("piece is not valid UTF-8: %q", piece)
+		}
+	}
+	if got := strings.ReplaceAll(folded, crlf+" ", ""); got != line {
+		t.Error("unfolding a four-byte-rune line did not restore it")
+	}
+}
+
 func TestShortLineIsNotFolded(t *testing.T) {
 	if got := fold("SUMMARY:Cleaning"); got != "SUMMARY:Cleaning" {
 		t.Errorf("fold(short) = %q, want it untouched", got)
