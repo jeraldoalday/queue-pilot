@@ -157,7 +157,7 @@ jobs:
       # The report is only worth keeping when something failed — a green
       # run's artefacts are never opened, and uploading them on every push
       # is a minute per run spent on nothing.
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v6
         if: failure()
         with:
           name: playwright-report
