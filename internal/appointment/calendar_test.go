@@ -202,6 +202,13 @@ func TestCalendarFilename(t *testing.T) {
 	if got := CalendarFilename(unnameable, appt, manila); !strings.HasPrefix(got, "appointment-") {
 		t.Errorf("CalendarFilename for an unsluggable name = %q", got)
 	}
+
+	// A nil location falls back to UTC rather than panicking on a nil
+	// pointer dereference — the guard an org whose timezone failed to
+	// load would otherwise be missing.
+	if got := CalendarFilename(testOrg(), appt, nil); got != "acme-dental-2026-03-10.ics" {
+		t.Errorf("CalendarFilename(nil) = %q, want the UTC day", got)
+	}
 }
 
 func TestCalendarURL(t *testing.T) {
